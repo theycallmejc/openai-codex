@@ -1,0 +1,41 @@
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.json
+htmlcov/
+
+# Runtime data and generated output
+*.db
+*.sqlite
+*.sqlite3
+logs/
+exports/
+generated/
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+build/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+
+# Archives and binaries
+*.zip
+*.tar
+*.gz
+*.exe
