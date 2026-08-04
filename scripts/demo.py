@@ -15,6 +15,11 @@ with tempfile.TemporaryDirectory() as directory:
     main.init_db()
     client = TestClient(main.app)
     project = client.post("/api/projects", json={"name": "Automated demo"}).json()["data"]["public_id"]
-    happy = client.post(f"/api/projects/{project}/requirements", json={"raw_requirement": "Users can save a shopping list. Users can rename a shopping list."}).json()
+    client.post(f"/api/projects/{project}/requirements", json={"raw_requirement": "Users can save a shopping list. Users can rename a shopping list."})
+    client.post(f"/api/projects/{project}/brd/generate")
+    client.post(f"/api/projects/{project}/brd/approve", json={"reviewer": "Demo reviewer"})
+    client.post(f"/api/projects/{project}/backlog/generate")
+    client.post(f"/api/projects/{project}/backlog/approve", json={"reviewer": "Demo reviewer"})
+    happy = client.post(f"/api/projects/{project}/tests/generate").json()
     duplicate = client.post(f"/api/projects/{project}/requirements", json={"raw_requirement": "Users can save a shopping list. Users can rename a shopping list."}).json()
     print(json.dumps({"happy_path": happy["data"], "duplicate_guardrail": duplicate["error"]}, indent=2))

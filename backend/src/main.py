@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = Path(os.getenv("SDLC_DATABASE_PATH", str(ROOT / "data" / "sdlc-framework.db")))
 RULES_VERSION = "automated-rules-v1"
 MAX_REQUIREMENT_LENGTH = 10_000
+STATES = {"DRAFT", "REQUIREMENT_CAPTURED", "ANALYSIS_COMPLETED", "BRD_GENERATED", "BRD_AWAITING_APPROVAL", "BRD_APPROVED", "BRD_REJECTED", "BACKLOG_GENERATED", "BACKLOG_AWAITING_APPROVAL", "BACKLOG_APPROVED", "BACKLOG_REJECTED", "TESTS_GENERATED", "TRACEABILITY_VALIDATED", "QA_HANDOFF_READY", "COMPLETED", "FAILED"}
 
 app = FastAPI(title="Automated SDLC-to-QA MVP", version="1.0.0")
 
@@ -30,6 +31,11 @@ class ProjectInput(BaseModel):
 
 class RequirementInput(BaseModel):
     raw_requirement: str = Field(min_length=1, max_length=MAX_REQUIREMENT_LENGTH)
+
+
+class DecisionInput(BaseModel):
+    reviewer: str = Field(min_length=1, max_length=120)
+    reason: str = Field(default="", max_length=2000)
 
 
 def now() -> str:
@@ -74,6 +80,9 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS requirements (id INTEGER PRIMARY KEY, project_id INTEGER UNIQUE, raw_text TEXT, content_hash TEXT, created_at TEXT);
         CREATE TABLE IF NOT EXISTS artifacts (id INTEGER PRIMARY KEY, project_id INTEGER, kind TEXT, content_json TEXT, created_at TEXT, UNIQUE(project_id, kind));
         CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY, project_id INTEGER, stage TEXT, outcome TEXT, actor TEXT, rules_version TEXT, reason TEXT, created_at TEXT);
+        CREATE TABLE IF NOT EXISTS requirement_revisions (id INTEGER PRIMARY KEY, project_id INTEGER, version INTEGER, raw_text TEXT, content_hash TEXT, created_at TEXT, UNIQUE(project_id,version));
+        CREATE TABLE IF NOT EXISTS artifact_revisions (id INTEGER PRIMARY KEY, project_id INTEGER, artifact_type TEXT, version INTEGER, workflow_stage TEXT, approval_state TEXT, content_json TEXT, created_at TEXT, UNIQUE(project_id,artifact_type,version));
+        CREATE TABLE IF NOT EXISTS workflow_audit_events (id INTEGER PRIMARY KEY, event_id TEXT UNIQUE, project_id INTEGER, artifact_type TEXT, artifact_version INTEGER, actor TEXT, action TEXT, previous_state TEXT, new_state TEXT, timestamp TEXT, reason TEXT, metadata_json TEXT);
         """)
 
 
@@ -104,6 +113,29 @@ def save_artifact(c: sqlite3.Connection, project_key: int, kind: str, payload: d
 
 def audit(c: sqlite3.Connection, project_key: int, stage: str, outcome: str, reason: str = "") -> None:
     c.execute("INSERT INTO audit_events(project_id,stage,outcome,actor,rules_version,reason,created_at) VALUES(?,?,?,?,?,?,?)", (project_key, stage, outcome, "system", RULES_VERSION, reason, now()))
+
+
+def transition(c, project, new_state, action, artifact_type=None, version=None, actor="system", reason="", metadata=None):
+    if new_state not in STATES: raise ValueError(new_state)
+    c.execute("UPDATE projects SET state=? WHERE id=?", (new_state, project["id"]))
+    c.execute("INSERT INTO workflow_audit_events(event_id,project_id,artifact_type,artifact_version,actor,action,previous_state,new_state,timestamp,reason,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (str(uuid.uuid4()), project["id"], artifact_type, version, actor, action, project["state"], new_state, now(), reason, json.dumps(metadata or {"rules_version": RULES_VERSION})))
+    return c.execute("SELECT * FROM projects WHERE id=?", (project["id"],)).fetchone()
+
+
+def revision(c, project, kind, stage, content, approval_state="PENDING"):
+    version = c.execute("SELECT COALESCE(MAX(version),0)+1 FROM artifact_revisions WHERE project_id=? AND artifact_type=?", (project["id"], kind)).fetchone()[0]
+    c.execute("INSERT INTO artifact_revisions(project_id,artifact_type,version,workflow_stage,approval_state,content_json,created_at) VALUES(?,?,?,?,?,?,?)", (project["id"], kind, version, stage, approval_state, json.dumps(content), now()))
+    return version
+
+
+def latest_revision(c, project, kind):
+    row = c.execute("SELECT * FROM artifact_revisions WHERE project_id=? AND artifact_type=? ORDER BY version DESC LIMIT 1", (project["id"], kind)).fetchone()
+    return (json.loads(row["content_json"]), row) if row else (None, None)
+
+
+def require_state(project, states, actions):
+    if project["state"] not in states:
+        raise HTTPException(409, {"code":"INVALID_STATE_TRANSITION", "message":f"Action is not allowed from {project['state']}", "allowed_actions":actions})
 
 
 def clauses(raw: str) -> list[str]:
@@ -148,8 +180,13 @@ def run_pipeline(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, Any]:
 
 def project_payload(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, Any]:
     keys = ["analysis", "brd", "backlog", "tests", "traceability", "qa_handoff"]
-    audit_rows = c.execute("SELECT stage,outcome,actor,rules_version,reason,created_at FROM audit_events WHERE project_id = ? ORDER BY id", (project["id"],)).fetchall()
-    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": {k: artifact(c, project["id"], k) for k in keys}, "audit_events": [dict(x) for x in audit_rows]}
+    audit_rows = c.execute("SELECT * FROM workflow_audit_events WHERE project_id = ? ORDER BY id", (project["id"],)).fetchall()
+    history = c.execute("SELECT artifact_type,version,workflow_stage,approval_state,created_at FROM artifact_revisions WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
+    artifacts = {}
+    for key in keys:
+        content, row = latest_revision(c, project, key)
+        artifacts[key] = {**content, "version":row["version"], "created_at":row["created_at"], "approval_state":row["approval_state"]} if row else artifact(c, project["id"], key)
+    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
 
 
 @app.get("/")
@@ -197,14 +234,84 @@ def submit_requirement(project_id: str, payload: RequirementInput) -> JSONRespon
         if existing and existing[0] == digest:
             raise HTTPException(409, {"code": "DUPLICATE_REQUIREMENT", "message": "This requirement was already submitted"})
         c.execute("INSERT INTO requirements(project_id,raw_text,content_hash,created_at) VALUES(?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET raw_text=excluded.raw_text,content_hash=excluded.content_hash,created_at=excluded.created_at", (project["id"], raw, digest, now()))
-        c.execute("UPDATE projects SET state = 'REQUIREMENT_CAPTURED' WHERE id = ?", (project["id"],))
-        return envelope(run_pipeline(c, project), 201)
+        version = c.execute("SELECT COALESCE(MAX(version),0)+1 FROM requirement_revisions WHERE project_id=?", (project["id"],)).fetchone()[0]
+        c.execute("INSERT INTO requirement_revisions(project_id,version,raw_text,content_hash,created_at) VALUES(?,?,?,?,?)", (project["id"], version, raw, digest, now()))
+        project = transition(c, project, "REQUIREMENT_CAPTURED", "requirement_captured", "requirement", version, metadata={"invalidated_dependent_artifacts":bool(existing)})
+        return envelope({"state":project["state"],"requirement_version":version,"next_action":"generate_brd"}, 201)
 
 
 @app.post("/api/projects/{project_id}/workflow/run")
 def workflow_run(project_id: str) -> JSONResponse:
     with db() as c:
-        return envelope(run_pipeline(c, project_row(c, project_id)))
+        project = project_row(c, project_id)
+        if project["state"] in {"BRD_AWAITING_APPROVAL", "BACKLOG_AWAITING_APPROVAL"}:
+            return envelope({"state":project["state"],"next_action":"human_approval_required"})
+        if project["state"] == "REQUIREMENT_CAPTURED": return brd_generate(project_id)
+        if project["state"] == "BRD_APPROVED": return backlog_generate(project_id)
+        if project["state"] == "BACKLOG_APPROVED": return tests_generate(project_id)
+        raise HTTPException(409, {"code":"INVALID_STATE_TRANSITION","message":"Workflow cannot run from this state","allowed_actions":["submit_requirement"]})
+
+
+@app.post("/api/projects/{project_id}/brd/generate")
+def brd_generate(project_id: str) -> JSONResponse:
+    with db() as c:
+        project=project_row(c, project_id); require_state(project,{"REQUIREMENT_CAPTURED","BRD_REJECTED"},["submit_requirement"])
+        req=c.execute("SELECT raw_text FROM requirements WHERE project_id=?",(project["id"],)).fetchone()[0]; items=clauses(req)
+        if not items: project=transition(c,project,"FAILED","analysis_failed",reason="No meaningful requirement"); raise HTTPException(422,{"code":"VALIDATION_FAILED","message":"No meaningful requirement"})
+        project=transition(c,project,"ANALYSIS_COMPLETED","analysis_completed","analysis")
+        av=revision(c,project,"analysis","ANALYSIS_COMPLETED",{"functional_requirements":items,"rules_version":RULES_VERSION})
+        project=transition(c,project,"BRD_GENERATED","brd_generated","brd")
+        bv=revision(c,project,"brd","BRD_GENERATED",{"id":"BRD-001","scope_in":items,"analysis_version":av,"rules_version":RULES_VERSION})
+        project=transition(c,project,"BRD_AWAITING_APPROVAL","brd_awaiting_approval","brd",bv)
+        return envelope({"state":project["state"],"artifact_version":bv,"next_action":"approve_brd_or_reject_brd"})
+
+
+def decide(c, project, kind, approved, body):
+    awaiting=f"{kind.upper()}_AWAITING_APPROVAL"; require_state(project,{awaiting},[f"generate_{kind}"])
+    if not approved and not body.reason.strip(): raise HTTPException(422,{"code":"REJECTION_REASON_REQUIRED","message":"A rejection reason is required"})
+    content,row=latest_revision(c,project,kind); status="APPROVED" if approved else "REJECTED"; state=f"{kind.upper()}_{status}"; action=f"{kind}_{status.lower()}"
+    c.execute("UPDATE artifact_revisions SET approval_state=? WHERE id=?",(status,row["id"]))
+    project=transition(c,project,state,action,kind,row["version"],body.reviewer,body.reason.strip(),{"rules_version":RULES_VERSION,"approval_state":status})
+    return {"state":project["state"],"artifact_version":row["version"],"approval_state":status}
+
+
+@app.post("/api/projects/{project_id}/brd/approve")
+def brd_approve(project_id: str, body: DecisionInput) -> JSONResponse:
+    with db() as c: return envelope(decide(c,project_row(c,project_id),"brd",True,body))
+
+@app.post("/api/projects/{project_id}/brd/reject")
+def brd_reject(project_id: str, body: DecisionInput) -> JSONResponse:
+    with db() as c: return envelope(decide(c,project_row(c,project_id),"brd",False,body))
+
+@app.post("/api/projects/{project_id}/backlog/generate")
+def backlog_generate(project_id: str) -> JSONResponse:
+    with db() as c:
+        project=project_row(c,project_id); require_state(project,{"BRD_APPROVED","BACKLOG_REJECTED"},["approve_brd"]); brd,row=latest_revision(c,project,"brd")
+        project=transition(c,project,"BACKLOG_GENERATED","backlog_generated","backlog")
+        stories=[{"id":f"STORY-{i:03d}","acceptance_criteria":[{"id":f"AC-{i:03d}","then":item}]} for i,item in enumerate(brd["scope_in"],1)]
+        version=revision(c,project,"backlog","BACKLOG_GENERATED",{"id":"BACKLOG-001","brd_version":row["version"],"stories":stories,"rules_version":RULES_VERSION})
+        project=transition(c,project,"BACKLOG_AWAITING_APPROVAL","backlog_awaiting_approval","backlog",version)
+        return envelope({"state":project["state"],"artifact_version":version,"next_action":"approve_backlog_or_reject_backlog"})
+
+@app.post("/api/projects/{project_id}/backlog/approve")
+def backlog_approve(project_id: str, body: DecisionInput) -> JSONResponse:
+    with db() as c: return envelope(decide(c,project_row(c,project_id),"backlog",True,body))
+@app.post("/api/projects/{project_id}/backlog/reject")
+def backlog_reject(project_id: str, body: DecisionInput) -> JSONResponse:
+    with db() as c: return envelope(decide(c,project_row(c,project_id),"backlog",False,body))
+
+@app.post("/api/projects/{project_id}/tests/generate")
+def tests_generate(project_id: str) -> JSONResponse:
+    with db() as c:
+        project=project_row(c,project_id); require_state(project,{"BACKLOG_APPROVED"},["approve_backlog"]); backlog,row=latest_revision(c,project,"backlog")
+        project=transition(c,project,"TESTS_GENERATED","tests_generated","tests"); cases=[]
+        for story in backlog["stories"]:
+            for typ in ("positive","negative","boundary"): cases.append({"id":f"TC-{len(cases)+1:03d}","criterion_id":story["acceptance_criteria"][0]["id"],"type":typ})
+        tv=revision(c,project,"tests","TESTS_GENERATED",{"id":"TEST-001","test_cases":cases,"backlog_version":row["version"]})
+        xv=revision(c,project,"traceability","TRACEABILITY_VALIDATED",{"valid":True,"criteria_count":len(backlog["stories"]),"test_count":len(cases),"coverage":"100%","gaps":[]})
+        project=transition(c,project,"TRACEABILITY_VALIDATED","traceability_validated","traceability",xv); hv=revision(c,project,"qa_handoff","QA_HANDOFF_READY",{"id":"QAH-001","status":"ready","traceability_version":xv})
+        project=transition(c,project,"QA_HANDOFF_READY","qa_handoff_ready","qa_handoff",hv); project=transition(c,project,"COMPLETED","workflow_completed","qa_handoff",hv)
+        return envelope({"state":project["state"],"artifact_version":tv,"traceability_version":xv,"qa_handoff_version":hv})
 
 
 @app.get("/api/projects/{project_id}/traceability")

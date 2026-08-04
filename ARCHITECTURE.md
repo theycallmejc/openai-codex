@@ -1,6 +1,6 @@
 # Architecture
 
-The MVP is a local modular monolith. FastAPI serves the API and static review UI; SQLite persists projects, raw requirements, generated JSON artifacts, and append-only automated audit events.
+The MVP is a local modular monolith. FastAPI serves the API and static review UI; SQLite persists projects, requirement and artifact revisions, approvals, and append-only workflow audit events.
 
 ```mermaid
 flowchart LR
@@ -14,4 +14,4 @@ flowchart LR
   P --> D[(SQLite artifacts and system audit)]
 ```
 
-`POST /api/projects/{projectId}/requirements` starts the pipeline automatically; `POST /workflow/run` resumes it once a requirement exists. A validation failure sets `FAILED`, records a `system` audit event with the rules version and reason, and returns a retry-safe next action. No human approval endpoints or external calls exist.
+`POST /api/projects/{projectId}/requirements` records a requirement revision. BRD and backlog generation each stop at a mandatory approval gate; reviewer decisions retain the artifact version, timestamp, and reason. `/workflow/run` remains a compatibility/demo helper but never bypasses those gates.

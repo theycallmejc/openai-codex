@@ -10,7 +10,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn backend.src.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/`. Submission automatically runs the entire workflow.
+Open `http://127.0.0.1:8000/`. Requirement submission captures a revision; BRD and backlog generation require recorded reviewer approvals before downstream generation.
 
 ## API
 
@@ -18,8 +18,11 @@ Open `http://127.0.0.1:8000/`. Submission automatically runs the entire workflow
 |---|---|---|
 | GET | `/api/health` | Deterministic service health |
 | POST | `/api/projects` | Create a project |
-| POST | `/api/projects/{projectId}/requirements` | Submit and automatically execute the workflow |
-| POST | `/api/projects/{projectId}/workflow/run` | Resume/re-run a submitted workflow |
+| POST | `/api/projects/{projectId}/requirements` | Submit a requirement revision |
+| POST | `/api/projects/{projectId}/brd/generate`, `/brd/approve`, `/brd/reject` | Govern BRD generation and review |
+| POST | `/api/projects/{projectId}/backlog/generate`, `/backlog/approve`, `/backlog/reject` | Govern backlog generation and review |
+| POST | `/api/projects/{projectId}/tests/generate` | Generate tests after backlog approval |
+| POST | `/api/projects/{projectId}/workflow/run` | Demo helper; stops at mandatory approval gates |
 | GET | `/api/projects/{projectId}` | Project, artifacts, and system audit events |
 | GET | `/api/projects/{projectId}/traceability` | Traceability result |
 | GET | `/api/projects/{projectId}/qa-handoff` | QA handoff |
