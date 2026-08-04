@@ -9,6 +9,7 @@ __pycache__/
 .coverage
 coverage.json
 htmlcov/
+demo-evidence.json
 
 # Runtime data and generated output
 *.db

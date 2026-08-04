@@ -1,5 +1,7 @@
 # Prompt and Decision Log
 
+> Historical record: the current executable product uses automated deterministic validation rather than the older human-approval workflow described below.
+
 This file records hackathon instructions, decisions, human approvals, and
 verified outcomes. It contains no credentials or non-synthetic business data.
 

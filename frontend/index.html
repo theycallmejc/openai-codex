@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Automated SDLC-to-QA</title><link rel="stylesheet" href="/static/styles.css"></head>
+<body><main><h1>Automated SDLC-to-QA</h1><p>Deterministic workflow: requirement → BRD → backlog → tests → QA handoff.</p>
+<form id="workflow-form"><label>Project name<input id="name" required maxlength="120" value="Demo project"></label><label>Requirement<textarea id="requirement" required maxlength="10000" placeholder="As a customer, I want to save shopping lists so that I can reuse them."></textarea></label><button>Run automated workflow</button></form>
+<p id="status" role="status"></p><section id="results" aria-live="polite"></section></main><script src="/static/app.js"></script></body></html>
