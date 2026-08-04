@@ -222,11 +222,20 @@ def get_project(project_id: str) -> JSONResponse:
         return envelope(project_payload(c, project_row(c, project_id)))
 
 
+@app.get("/api/samples")
+def get_samples() -> JSONResponse:
+    """Expose the checked-in test requirements to the local UI."""
+    with (ROOT / "sample-data" / "sample-requirements.json").open(encoding="utf-8") as handle:
+        return envelope(json.load(handle))
+
+
 @app.post("/api/projects/{project_id}/requirements")
 def submit_requirement(project_id: str, payload: RequirementInput) -> JSONResponse:
     raw = re.sub(r"\s+", " ", payload.raw_requirement).strip()
     if not raw:
         raise HTTPException(422, {"code": "INVALID_REQUIREMENT", "message": "Requirement cannot be empty"})
+    if not clauses(raw):
+        raise HTTPException(422, {"code": "INVALID_REQUIREMENT", "message": "Provide a meaningful requirement sentence (at least 8 characters), not a short label or test value."})
     with db() as c:
         project = project_row(c, project_id)
         digest = hashlib.sha256(raw.lower().encode()).hexdigest()
