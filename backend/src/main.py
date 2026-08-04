@@ -83,6 +83,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS requirement_revisions (id INTEGER PRIMARY KEY, project_id INTEGER, version INTEGER, raw_text TEXT, content_hash TEXT, created_at TEXT, UNIQUE(project_id,version));
         CREATE TABLE IF NOT EXISTS artifact_revisions (id INTEGER PRIMARY KEY, project_id INTEGER, artifact_type TEXT, version INTEGER, workflow_stage TEXT, approval_state TEXT, content_json TEXT, created_at TEXT, UNIQUE(project_id,artifact_type,version));
         CREATE TABLE IF NOT EXISTS workflow_audit_events (id INTEGER PRIMARY KEY, event_id TEXT UNIQUE, project_id INTEGER, artifact_type TEXT, artifact_version INTEGER, actor TEXT, action TEXT, previous_state TEXT, new_state TEXT, timestamp TEXT, reason TEXT, metadata_json TEXT);
+        CREATE TABLE IF NOT EXISTS agent_runs (id INTEGER PRIMARY KEY, run_id TEXT UNIQUE, project_id INTEGER, agent TEXT, status TEXT, input_artifact TEXT, output_artifact TEXT, started_at TEXT, completed_at TEXT, error TEXT);
         """)
 
 
@@ -131,6 +132,16 @@ def revision(c, project, kind, stage, content, approval_state="PENDING"):
 def latest_revision(c, project, kind):
     row = c.execute("SELECT * FROM artifact_revisions WHERE project_id=? AND artifact_type=? ORDER BY version DESC LIMIT 1", (project["id"], kind)).fetchone()
     return (json.loads(row["content_json"]), row) if row else (None, None)
+
+
+def start_agent_run(c, project, agent: str, input_artifact: str) -> str:
+    run_id = str(uuid.uuid4())
+    c.execute("INSERT INTO agent_runs(run_id,project_id,agent,status,input_artifact,started_at) VALUES(?,?,?,?,?,?)", (run_id, project["id"], agent, "running", input_artifact, now()))
+    return run_id
+
+
+def finish_agent_run(c, run_id: str, output_artifact: str) -> None:
+    c.execute("UPDATE agent_runs SET status='completed',output_artifact=?,completed_at=? WHERE run_id=?", (output_artifact, now(), run_id))
 
 
 def require_state(project, states, actions):
@@ -182,11 +193,12 @@ def project_payload(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, An
     keys = ["analysis", "brd", "backlog", "tests", "traceability", "qa_handoff"]
     audit_rows = c.execute("SELECT * FROM workflow_audit_events WHERE project_id = ? ORDER BY id", (project["id"],)).fetchall()
     history = c.execute("SELECT artifact_type,version,workflow_stage,approval_state,created_at FROM artifact_revisions WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
+    runs = c.execute("SELECT run_id,agent,status,input_artifact,output_artifact,started_at,completed_at,error FROM agent_runs WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
     artifacts = {}
     for key in keys:
         content, row = latest_revision(c, project, key)
         artifacts[key] = {**content, "version":row["version"], "created_at":row["created_at"], "approval_state":row["approval_state"]} if row else artifact(c, project["id"], key)
-    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
+    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "agent_runs":[dict(x) for x in runs], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
 
 
 @app.get("/")
@@ -292,6 +304,7 @@ def analysis_generate(project_id: str) -> JSONResponse:
     with db() as c:
         project = project_row(c, project_id)
         require_state(project, {"REQUIREMENT_CAPTURED"}, ["submit_requirement"])
+        run_id = start_agent_run(c, project, "analysis", "requirement")
         req = c.execute("SELECT raw_text FROM requirements WHERE project_id=?", (project["id"],)).fetchone()[0]
         items = clauses(req)
         if not items:
@@ -299,6 +312,7 @@ def analysis_generate(project_id: str) -> JSONResponse:
             raise HTTPException(422, {"code":"VALIDATION_FAILED", "message":"No meaningful requirement"})
         version = revision(c, project, "analysis", "ANALYSIS_COMPLETED", {"id":"REQ-001", "functional_requirements":[{"id":f"REQ-001-FR-{i:02d}", "text":text} for i,text in enumerate(items,1)], "rules_version":RULES_VERSION})
         project = transition(c, project, "ANALYSIS_COMPLETED", "analysis_completed", "analysis", version)
+        finish_agent_run(c, run_id, f"analysis:v{version}")
         return envelope({"state":project["state"], "agent":"analysis", "artifact_version":version, "next_action":"generate_brd"})
 
 
@@ -306,10 +320,12 @@ def analysis_generate(project_id: str) -> JSONResponse:
 def brd_generate(project_id: str) -> JSONResponse:
     with db() as c:
         project=project_row(c, project_id); require_state(project,{"ANALYSIS_COMPLETED","BRD_REJECTED"},["run_analysis"])
+        run_id=start_agent_run(c,project,"brd","analysis")
         analysis,av_row=latest_revision(c,project,"analysis"); items=[x["text"] if isinstance(x,dict) else x for x in analysis["functional_requirements"]]; av=av_row["version"]
         project=transition(c,project,"BRD_GENERATED","brd_generated","brd")
         bv=revision(c,project,"brd","BRD_GENERATED",{"id":"BRD-001","scope_in":items,"analysis_version":av,"rules_version":RULES_VERSION})
         project=transition(c,project,"BRD_AWAITING_APPROVAL","brd_awaiting_approval","brd",bv)
+        finish_agent_run(c,run_id,f"brd:v{bv}")
         return envelope({"state":project["state"],"artifact_version":bv,"next_action":"approve_brd_or_reject_brd"})
 
 
@@ -334,10 +350,12 @@ def brd_reject(project_id: str, body: DecisionInput) -> JSONResponse:
 def backlog_generate(project_id: str) -> JSONResponse:
     with db() as c:
         project=project_row(c,project_id); require_state(project,{"BRD_APPROVED","BACKLOG_REJECTED"},["approve_brd"]); brd,row=latest_revision(c,project,"brd")
+        run_id=start_agent_run(c,project,"backlog","brd")
         project=transition(c,project,"BACKLOG_GENERATED","backlog_generated","backlog")
         stories=[{"id":f"STORY-{i:03d}","acceptance_criteria":[{"id":f"AC-{i:03d}","then":item}]} for i,item in enumerate(brd["scope_in"],1)]
         version=revision(c,project,"backlog","BACKLOG_GENERATED",{"id":"BACKLOG-001","brd_version":row["version"],"stories":stories,"rules_version":RULES_VERSION})
         project=transition(c,project,"BACKLOG_AWAITING_APPROVAL","backlog_awaiting_approval","backlog",version)
+        finish_agent_run(c,run_id,f"backlog:v{version}")
         return envelope({"state":project["state"],"artifact_version":version,"next_action":"approve_backlog_or_reject_backlog"})
 
 @app.post("/api/projects/{project_id}/backlog/approve")
@@ -351,11 +369,13 @@ def backlog_reject(project_id: str, body: DecisionInput) -> JSONResponse:
 def tests_generate(project_id: str) -> JSONResponse:
     with db() as c:
         project=project_row(c,project_id); require_state(project,{"BACKLOG_APPROVED"},["approve_backlog"]); backlog,row=latest_revision(c,project,"backlog")
+        run_id=start_agent_run(c,project,"tests","backlog")
         project=transition(c,project,"TESTS_GENERATED","tests_generated","tests"); cases=[]
         for story in backlog["stories"]:
             for typ in ("positive","negative","boundary"): cases.append({"id":f"TC-{len(cases)+1:03d}","criterion_id":story["acceptance_criteria"][0]["id"],"type":typ})
         tv=revision(c,project,"tests","TESTS_GENERATED",{"id":"TEST-001","test_cases":cases,"backlog_version":row["version"]})
         project=transition(c,project,"TESTS_GENERATED","tests_generated","tests",tv)
+        finish_agent_run(c,run_id,f"tests:v{tv}")
         return envelope({"state":project["state"],"agent":"tests","artifact_version":tv,"next_action":"validate_traceability"})
 
 
@@ -363,10 +383,12 @@ def tests_generate(project_id: str) -> JSONResponse:
 def traceability_generate(project_id: str) -> JSONResponse:
     with db() as c:
         project=project_row(c,project_id); require_state(project,{"TESTS_GENERATED"},["generate_tests"])
+        run_id=start_agent_run(c,project,"traceability","tests + backlog")
         tests,row=latest_revision(c,project,"tests")
         backlog,_=latest_revision(c,project,"backlog")
         version=revision(c,project,"traceability","TRACEABILITY_VALIDATED",{"valid":True,"criteria_count":len(backlog["stories"]),"test_count":len(tests["test_cases"]),"coverage":"100%","gaps":[]})
         project=transition(c,project,"TRACEABILITY_VALIDATED","traceability_validated","traceability",version)
+        finish_agent_run(c,run_id,f"traceability:v{version}")
         return envelope({"state":project["state"],"agent":"traceability","artifact_version":version,"next_action":"create_qa_handoff"})
 
 
@@ -374,10 +396,12 @@ def traceability_generate(project_id: str) -> JSONResponse:
 def qa_handoff_generate(project_id: str) -> JSONResponse:
     with db() as c:
         project=project_row(c,project_id); require_state(project,{"TRACEABILITY_VALIDATED"},["validate_traceability"])
+        run_id=start_agent_run(c,project,"qa_handoff","traceability")
         _,trace=latest_revision(c,project,"traceability")
         version=revision(c,project,"qa_handoff","QA_HANDOFF_READY",{"id":"QAH-001","status":"ready","traceability_version":trace["version"]})
         project=transition(c,project,"QA_HANDOFF_READY","qa_handoff_ready","qa_handoff",version)
         project=transition(c,project,"COMPLETED","workflow_completed","qa_handoff",version)
+        finish_agent_run(c,run_id,f"qa_handoff:v{version}")
         return envelope({"state":project["state"],"agent":"qa_handoff","artifact_version":version,"next_action":"complete"})
 
 
