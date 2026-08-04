@@ -1,1 +1,52 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SDLC FlowPilot</title><link rel="stylesheet" href="/static/styles.css"></head><body><div class="app"><aside><strong>SDLC <i>FlowPilot</i></strong><button id="new">＋ New Workflow</button><nav id="nav"></nav></aside><main><header><div><small id="id">No workflow selected</small><h1 id="title">From raw requirement to QA-ready traceability</h1></div><div id="status" class="badge">Ready</div></header><section class="hero" id="intake"><label>Requirement<textarea id="requirement" placeholder="Customers should be able to reset a forgotten password using a verified email OTP. The OTP must expire after five minutes."></textarea></label><button id="run">Create workflow</button></section><section class="workspace"><div id="rail" class="rail"></div><article id="artifact"><h2>Workflow workspace</h2><p>Submit a requirement to generate and review governed artifacts.</p></article><aside id="actions" class="panel"></aside></section></main></div><dialog id="reject"><form method="dialog"><h2>Reject artifact</h2><label>Reason<textarea id="reason" required></textarea></label><button value="cancel">Cancel</button><button id="confirmReject" value="default">Reject</button></form></dialog><script src="/static/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>FlowPilot · SDLC workspace</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">✦</span><strong>FlowPilot</strong><span class="beta">BETA</span></div>
+      <button id="new" class="new-workflow"><span>＋</span> New workflow</button>
+      <p class="nav-label">WORKSPACE</p>
+      <nav id="nav" aria-label="Workflow stages"></nav>
+      <section class="brand-panel" aria-label="FlowPilot workflow guide">
+        <div class="brand-orbit" aria-hidden="true"><span></span><i></i><b></b></div>
+        <p class="eyebrow">AUTONOMOUS DELIVERY</p>
+        <h2>Every handoff stays visible.</h2>
+        <p>Agents use the saved artifact from the preceding stage. Human approval gates protect the BRD and backlog.</p>
+      </section>
+      <div class="sidebar-footer"><span class="status-dot"></span> Local deterministic mode</div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="crumb"><span class="crumb-dot"></span><span id="id">New workflow</span></div>
+        <div id="status" class="status-pill">Ready</div>
+      </header>
+      <section class="content-head">
+        <div><p class="eyebrow">SDLC TO QA</p><h1 id="title">Turn a requirement into QA-ready work</h1><p class="subtitle">Capture a feature request, review its artifacts, and maintain traceability through delivery.</p></div>
+        <button id="run" class="primary-action">Create workflow <span>→</span></button>
+      </section>
+      <section id="workflowSummary" class="workflow-summary" hidden aria-live="polite"></section>
+      <section id="flowMap" class="flow-map" hidden aria-label="Agent workflow map"></section>
+      <section class="intake" id="intake">
+        <div class="section-heading"><div><p class="eyebrow">START HERE</p><h2>What are you building?</h2></div><span class="hint">Required</span></div>
+        <label for="requirement">Requirement</label>
+        <textarea id="requirement" placeholder="Customers should be able to reset a forgotten password using a verified email OTP. The OTP must expire after five minutes."></textarea>
+        <div class="intake-footer"><span>FlowPilot will create governed, traceable artifacts.</span><button id="runSecondary" class="primary-action">Create workflow <span>→</span></button></div>
+      </section>
+      <section class="workspace" aria-live="polite">
+        <aside id="rail" class="stage-rail"></aside>
+        <article id="artifact" class="artifact"><div class="empty-state"><span class="empty-icon">✦</span><h2>Workflow workspace</h2><p>Submit a requirement to generate and review governed artifacts.</p></div></article>
+        <aside id="actions" class="action-panel"><p class="eyebrow">NEXT ACTION</p><h3>Ready when you are</h3><p>Start with a clear requirement to open the workflow.</p></aside>
+      </section>
+    </main>
+  </div>
+  <dialog id="reject"><form method="dialog"><p class="eyebrow">REVIEW DECISION</p><h2>Reject artifact</h2><label for="reason">Reason<textarea id="reason" required placeholder="Explain what needs to change"></textarea></label><div class="dialog-actions"><button value="cancel">Cancel</button><button id="confirmReject" class="danger" value="default">Reject artifact</button></div></form></dialog>
+  <script src="/static/app.js"></script>
+</body>
+</html>

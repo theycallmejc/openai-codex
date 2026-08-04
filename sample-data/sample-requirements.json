@@ -1,1 +1,22 @@
-[{"name":"Saved shopping lists","raw_requirement":"As a customer, I can save a shopping list. I can rename a saved shopping list."}]
+[
+  {
+    "name": "Credit card billing update",
+    "description": "Recommended first end-to-end test",
+    "raw_requirement": "Customers can update their credit-card billing address after verifying their identity with a one-time passcode. The system must validate the postal code, save the previous and new address in an audit record, and email a confirmation to the customer."
+  },
+  {
+    "name": "Password reset by email OTP",
+    "description": "Security-focused workflow",
+    "raw_requirement": "Customers can reset a forgotten password using a one-time passcode sent to their verified email address. The passcode expires after five minutes, can be used once, and is invalidated after five failed attempts. The customer receives a confirmation email after the password is changed."
+  },
+  {
+    "name": "Invoice export",
+    "description": "Reporting and download workflow",
+    "raw_requirement": "Finance users can export invoices for a selected date range as a CSV file. The export includes invoice number, customer name, invoice date, currency, amount, payment status, and tax amount. The system rejects date ranges longer than twelve months and records each export request for audit."
+  },
+  {
+    "name": "Order cancellation",
+    "description": "Policy and approval workflow",
+    "raw_requirement": "Customers can request cancellation of an order before it is shipped. The system shows the refund amount, requires a cancellation reason, prevents cancellation after shipment, updates the order status, and sends the customer a cancellation confirmation. Support agents can review rejected cancellation requests."
+  }
+]

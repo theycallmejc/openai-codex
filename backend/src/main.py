@@ -236,30 +236,68 @@ def submit_requirement(project_id: str, payload: RequirementInput) -> JSONRespon
         c.execute("INSERT INTO requirements(project_id,raw_text,content_hash,created_at) VALUES(?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET raw_text=excluded.raw_text,content_hash=excluded.content_hash,created_at=excluded.created_at", (project["id"], raw, digest, now()))
         version = c.execute("SELECT COALESCE(MAX(version),0)+1 FROM requirement_revisions WHERE project_id=?", (project["id"],)).fetchone()[0]
         c.execute("INSERT INTO requirement_revisions(project_id,version,raw_text,content_hash,created_at) VALUES(?,?,?,?,?)", (project["id"], version, raw, digest, now()))
-        project = transition(c, project, "REQUIREMENT_CAPTURED", "requirement_captured", "requirement", version, metadata={"invalidated_dependent_artifacts":bool(existing)})
-        return envelope({"state":project["state"],"requirement_version":version,"next_action":"generate_brd"}, 201)
+        project = transition(c, project, "REQUIREMENT_CAPTURED", "requirement_captured", "requirement", version, metadata={"invalidated_dependent_artifacts":bool(existing), "automation_mode":"stepwise"})
+        return envelope({"state": project["state"], "requirement_version": version, "next_action": "run_analysis"}, 201)
 
 
 @app.post("/api/projects/{project_id}/workflow/run")
 def workflow_run(project_id: str) -> JSONResponse:
     with db() as c:
         project = project_row(c, project_id)
-        if project["state"] in {"BRD_AWAITING_APPROVAL", "BACKLOG_AWAITING_APPROVAL"}:
-            return envelope({"state":project["state"],"next_action":"human_approval_required"})
-        if project["state"] == "REQUIREMENT_CAPTURED": return brd_generate(project_id)
-        if project["state"] == "BRD_APPROVED": return backlog_generate(project_id)
-        if project["state"] == "BACKLOG_APPROVED": return tests_generate(project_id)
-        raise HTTPException(409, {"code":"INVALID_STATE_TRANSITION","message":"Workflow cannot run from this state","allowed_actions":["submit_requirement"]})
+        return envelope({**run_pipeline(c, project), "automation_mode": "end_to_end"})
+
+
+@app.post("/api/projects/{project_id}/automation/run-next")
+def automation_run_next(project_id: str) -> JSONResponse:
+    """Run the next autonomous agent, but deliberately stop at human approval gates."""
+    with db() as c:
+        project = project_row(c, project_id)
+        state = project["state"]
+        if state in {"BRD_AWAITING_APPROVAL", "BACKLOG_AWAITING_APPROVAL"}:
+            return envelope({"state": state, "status": "blocked", "reason": "Human approval is required before automation can continue."})
+        routes = {
+            "REQUIREMENT_CAPTURED": "analysis",
+            "ANALYSIS_COMPLETED": "brd",
+            "BRD_APPROVED": "backlog",
+            "BACKLOG_APPROVED": "tests",
+            "TESTS_GENERATED": "traceability",
+            "TRACEABILITY_VALIDATED": "qa_handoff",
+        }
+        agent = routes.get(state)
+        if not agent:
+            return envelope({"state": state, "status": "idle", "reason": "No autonomous agent is available for this workflow state."})
+    # Reuse the same guarded endpoints so automation cannot bypass workflow rules.
+    handlers = {
+        "analysis": analysis_generate,
+        "brd": brd_generate,
+        "backlog": backlog_generate,
+        "tests": tests_generate,
+        "traceability": traceability_generate,
+        "qa_handoff": qa_handoff_generate,
+    }
+    return handlers[agent](project_id)
+
+
+@app.post("/api/projects/{project_id}/analysis/generate")
+def analysis_generate(project_id: str) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        require_state(project, {"REQUIREMENT_CAPTURED"}, ["submit_requirement"])
+        req = c.execute("SELECT raw_text FROM requirements WHERE project_id=?", (project["id"],)).fetchone()[0]
+        items = clauses(req)
+        if not items:
+            transition(c, project, "FAILED", "analysis_failed", reason="No meaningful requirement")
+            raise HTTPException(422, {"code":"VALIDATION_FAILED", "message":"No meaningful requirement"})
+        version = revision(c, project, "analysis", "ANALYSIS_COMPLETED", {"id":"REQ-001", "functional_requirements":[{"id":f"REQ-001-FR-{i:02d}", "text":text} for i,text in enumerate(items,1)], "rules_version":RULES_VERSION})
+        project = transition(c, project, "ANALYSIS_COMPLETED", "analysis_completed", "analysis", version)
+        return envelope({"state":project["state"], "agent":"analysis", "artifact_version":version, "next_action":"generate_brd"})
 
 
 @app.post("/api/projects/{project_id}/brd/generate")
 def brd_generate(project_id: str) -> JSONResponse:
     with db() as c:
-        project=project_row(c, project_id); require_state(project,{"REQUIREMENT_CAPTURED","BRD_REJECTED"},["submit_requirement"])
-        req=c.execute("SELECT raw_text FROM requirements WHERE project_id=?",(project["id"],)).fetchone()[0]; items=clauses(req)
-        if not items: project=transition(c,project,"FAILED","analysis_failed",reason="No meaningful requirement"); raise HTTPException(422,{"code":"VALIDATION_FAILED","message":"No meaningful requirement"})
-        project=transition(c,project,"ANALYSIS_COMPLETED","analysis_completed","analysis")
-        av=revision(c,project,"analysis","ANALYSIS_COMPLETED",{"functional_requirements":items,"rules_version":RULES_VERSION})
+        project=project_row(c, project_id); require_state(project,{"ANALYSIS_COMPLETED","BRD_REJECTED"},["run_analysis"])
+        analysis,av_row=latest_revision(c,project,"analysis"); items=[x["text"] if isinstance(x,dict) else x for x in analysis["functional_requirements"]]; av=av_row["version"]
         project=transition(c,project,"BRD_GENERATED","brd_generated","brd")
         bv=revision(c,project,"brd","BRD_GENERATED",{"id":"BRD-001","scope_in":items,"analysis_version":av,"rules_version":RULES_VERSION})
         project=transition(c,project,"BRD_AWAITING_APPROVAL","brd_awaiting_approval","brd",bv)
@@ -308,10 +346,30 @@ def tests_generate(project_id: str) -> JSONResponse:
         for story in backlog["stories"]:
             for typ in ("positive","negative","boundary"): cases.append({"id":f"TC-{len(cases)+1:03d}","criterion_id":story["acceptance_criteria"][0]["id"],"type":typ})
         tv=revision(c,project,"tests","TESTS_GENERATED",{"id":"TEST-001","test_cases":cases,"backlog_version":row["version"]})
-        xv=revision(c,project,"traceability","TRACEABILITY_VALIDATED",{"valid":True,"criteria_count":len(backlog["stories"]),"test_count":len(cases),"coverage":"100%","gaps":[]})
-        project=transition(c,project,"TRACEABILITY_VALIDATED","traceability_validated","traceability",xv); hv=revision(c,project,"qa_handoff","QA_HANDOFF_READY",{"id":"QAH-001","status":"ready","traceability_version":xv})
-        project=transition(c,project,"QA_HANDOFF_READY","qa_handoff_ready","qa_handoff",hv); project=transition(c,project,"COMPLETED","workflow_completed","qa_handoff",hv)
-        return envelope({"state":project["state"],"artifact_version":tv,"traceability_version":xv,"qa_handoff_version":hv})
+        project=transition(c,project,"TESTS_GENERATED","tests_generated","tests",tv)
+        return envelope({"state":project["state"],"agent":"tests","artifact_version":tv,"next_action":"validate_traceability"})
+
+
+@app.post("/api/projects/{project_id}/traceability/generate")
+def traceability_generate(project_id: str) -> JSONResponse:
+    with db() as c:
+        project=project_row(c,project_id); require_state(project,{"TESTS_GENERATED"},["generate_tests"])
+        tests,row=latest_revision(c,project,"tests")
+        backlog,_=latest_revision(c,project,"backlog")
+        version=revision(c,project,"traceability","TRACEABILITY_VALIDATED",{"valid":True,"criteria_count":len(backlog["stories"]),"test_count":len(tests["test_cases"]),"coverage":"100%","gaps":[]})
+        project=transition(c,project,"TRACEABILITY_VALIDATED","traceability_validated","traceability",version)
+        return envelope({"state":project["state"],"agent":"traceability","artifact_version":version,"next_action":"create_qa_handoff"})
+
+
+@app.post("/api/projects/{project_id}/qa-handoff/generate")
+def qa_handoff_generate(project_id: str) -> JSONResponse:
+    with db() as c:
+        project=project_row(c,project_id); require_state(project,{"TRACEABILITY_VALIDATED"},["validate_traceability"])
+        _,trace=latest_revision(c,project,"traceability")
+        version=revision(c,project,"qa_handoff","QA_HANDOFF_READY",{"id":"QAH-001","status":"ready","traceability_version":trace["version"]})
+        project=transition(c,project,"QA_HANDOFF_READY","qa_handoff_ready","qa_handoff",version)
+        project=transition(c,project,"COMPLETED","workflow_completed","qa_handoff",version)
+        return envelope({"state":project["state"],"agent":"qa_handoff","artifact_version":version,"next_action":"complete"})
 
 
 @app.get("/api/projects/{project_id}/traceability")
