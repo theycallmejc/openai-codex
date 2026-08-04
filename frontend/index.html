@@ -1,3 +1,76 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlowPilot</title><link rel="stylesheet" href="/static/styles.css"></head>
-<body><div class="app-shell"><aside class="sidebar" id="sidebar"><div class="brand"><span aria-hidden="true">&#10022;</span><strong>FlowPilot</strong><b>BETA</b></div><button class="primary new-workflow" id="navNew">+ New workflow</button><nav class="app-nav" aria-label="Application"><button class="active">Workflows</button><button>Traceability</button><button>QA handoffs</button><button>Audit history</button></nav><div id="sidebarWorkflows"></div><div class="sidebar-bottom"><button>Help</button><button>Settings</button></div></aside><main class="main"><header class="topbar"><span id="crumb">New workflow</span><span id="status" hidden></span></header><section id="creationView" class="creation-view"><header class="page-head"><p>NEW WORKFLOW</p><h1>Turn a requirement into QA-ready artifacts</h1><span>Capture one requirement, then run each agent and approval gate in sequence.</span></header><form id="workflowForm" class="requirement-form"><div class="form-head"><div><h2>What are you building?</h2><p>Describe the intended behaviour, rules, and outcome.</p></div><label>Load sample scenario<select id="sampleRequirement"><option>Loading scenarios...</option></select></label></div><label for="requirement">Requirement description</label><textarea id="requirement" required placeholder="Describe the feature, its users, business rules, and expected outcome."></textarea><div id="formProgress" class="form-progress" role="status" aria-live="polite" hidden></div><div class="form-foot"><span id="formHint">Your requirement becomes the first saved workflow artifact.</span><div><button type="button" id="clearForm" class="secondary">Clear</button><button id="createWorkflow" class="primary" type="submit">Create workflow <i>&rarr;</i></button></div></div><p id="formError" role="alert"></p></form></section><section id="workspaceView" hidden></section></main></div><script src="/static/app.js"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>FlowPilot</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><span aria-hidden="true">✦</span><strong>FlowPilot</strong><b>BETA</b></div>
+      <button class="primary new-workflow" id="navNew">＋ New workflow</button>
+      <nav class="app-nav" aria-label="Application">
+        <button class="active">▣ <span>Workflows</span></button>
+        <button>⌁ <span>Traceability</span></button>
+        <button>✓ <span>QA handoffs</span></button>
+        <button>◷ <span>Audit history</span></button>
+      </nav>
+      <div id="sidebarWorkflows"></div>
+      <div class="sidebar-bottom">
+        <button>?</button><span>Help</span>
+        <button>⚙</button><span>Settings</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar"><span id="crumb">New workflow</span><span id="status" hidden></span></header>
+
+      <section id="creationView" class="creation-view">
+        <header class="page-head motion-surface" data-pointer-glow>
+          <p>NEW WORKFLOW</p>
+          <h1>Turn a requirement into QA-ready artifacts</h1>
+          <span>Capture one requirement, then run each agent and approval gate in sequence.</span>
+        </header>
+
+        <form id="workflowForm" class="requirement-form motion-surface" data-pointer-glow>
+          <div class="form-head">
+            <div><h2>What are you building?</h2><p>Describe the intended behaviour, rules, and outcome.</p></div>
+            <label>Load sample scenario<select id="sampleRequirement"><option>Loading scenarios...</option></select></label>
+          </div>
+          <label for="requirement">Requirement description</label>
+          <textarea id="requirement" required placeholder="Describe the feature, its users, business rules, and expected outcome."></textarea>
+          <div id="formProgress" class="form-progress" role="status" aria-live="polite" hidden></div>
+          <div class="form-foot">
+            <span id="formHint">Your requirement becomes the first saved workflow artifact.</span>
+            <div><button type="button" id="clearForm" class="secondary">Clear</button><button id="createWorkflow" class="primary" type="submit">Create workflow <i>→</i></button></div>
+          </div>
+          <p id="formError" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="workspaceView" hidden></section>
+    </main>
+  </div>
+
+  <dialog id="nextScenarioDialog" class="next-dialog">
+    <form method="dialog" class="dialog-card">
+      <button class="dialog-close" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow">CONTINUE</p>
+      <h2>Start the next scenario</h2>
+      <p class="dialog-copy">Your completed workflow stays preserved. Start blank or preload a sample requirement.</p>
+      <label>Choose a sample use case
+        <select id="nextScenarioSelect"><option value="">Start blank</option></select>
+      </label>
+      <div class="dialog-actions">
+        <button class="secondary" value="cancel">Cancel</button>
+        <button type="button" class="primary" id="startNextScenario">Start workflow <i>→</i></button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
