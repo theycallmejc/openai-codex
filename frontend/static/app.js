@@ -106,7 +106,8 @@ async function askChat(question) {
     addChatMessage(json.data.reply);
   } catch (error) {
     typing.remove();
-    addChatMessage(error.name === 'AbortError' ? 'Response stopped.' : 'I could not respond right now. Please retry your message.');
+    const message = error.name === 'AbortError' ? 'Response stopped.' : 'I could not respond right now. Please retry your message.';
+    addChatMessage(message); if (error.name !== 'AbortError') toast(message, 'error');
   } finally {
     chatAbortController = null;
   }
@@ -416,7 +417,7 @@ function bindWorkspace(vm) {
     if (vm.available[target]) { view = target; render(); }
     else status(`${stage.label} is blocked until ${vm.nextAction.label.toLowerCase()}.`);
   });
-  document.querySelector('[data-copy]')?.addEventListener('click', e => navigator.clipboard?.writeText(e.currentTarget.dataset.copy));
+  document.querySelector('[data-copy]')?.addEventListener('click', e => navigator.clipboard?.writeText(e.currentTarget.dataset.copy).then(() => toast('Copied to clipboard', 'success')).catch(() => toast('Copy is unavailable in this browser.', 'error')));
   document.querySelector('[data-copy-summary]')?.addEventListener('click', () => copySummary(vm));
   document.querySelector('[data-download]')?.addEventListener('click', () => downloadHandoff(vm));
   document.querySelectorAll('[data-run]').forEach(button => button.onclick = () => run(button.dataset.run));
@@ -459,7 +460,7 @@ async function run(path, body = {}) {
     await api(`/api/projects/${project.public_id}/${path}`, body);
     project = await api(`/api/projects/${project.public_id}`);
     render();
-  } catch (error) { status(`Failed: ${error.message}`); }
+  } catch (error) { status(`Failed: ${error.message}`); toast(error.message || 'That action could not be completed.', 'error'); }
 }
 
 async function runAutomation() {

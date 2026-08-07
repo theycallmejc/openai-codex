@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260808-layout2">
+  <link rel="stylesheet" href="/static/styles.css?v=20260808-delivery1">
 </head>
 <body>
   <div class="app-shell">
@@ -32,12 +32,6 @@
         <header class="new-hero"><div><p>NEW WORKFLOW</p><h1>Turn a requirement into<br>QA-ready artifacts.</h1><span>Describe what you're building, set review gates, and generate traceable delivery evidence.</span></div><div class="hero-orbit" aria-hidden="true"><i></i><i></i><b>FP</b><small>ORCHESTRATE</small></div></header>
         <section class="creation-stepper" aria-label="Workflow setup progress"><div class="setup-step active"><b>01</b><span><strong>Describe</strong><small>Capture the requirement</small></span></div><i></i><div class="setup-step"><b>02</b><span><strong>Configure agents</strong><small>Analysis and QA handoffs</small></span></div><i></i><div class="setup-step"><b>03</b><span><strong>Review gates</strong><small>Human approval controls</small></span></div><i></i><div class="setup-step"><b>04</b><span><strong>Generate</strong><small>QA-ready artifacts</small></span></div></section>
         <div class="creation-grid">
-        <header class="page-head motion-surface" data-pointer-glow>
-          <p>NEW WORKFLOW</p>
-          <h1>Turn a requirement into QA-ready artifacts</h1>
-          <span>Capture one requirement, then run each agent and approval gate in sequence.</span>
-        </header>
-
         <form id="workflowForm" class="requirement-form composer motion-surface" data-pointer-glow>
           <div class="form-head">
             <div><h2>What are you building?</h2><p>Describe the intended behaviour, rules, and outcome.</p></div>
@@ -79,8 +73,8 @@
     </form>
   </dialog>
 
-  <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="true"><span>✦</span><b>Ask FlowPilot</b></button>
-  <section id="chatPanel" class="chat-panel" aria-label="FlowPilot assistant">
+  <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="false"><span>✦</span><b>Ask FlowPilot</b></button>
+  <section id="chatPanel" class="chat-panel" aria-label="FlowPilot assistant" hidden>
     <header class="chat-head"><div><span><i></i> FLOWPILOT ASSISTANT</span><h2>Workflow guide</h2></div><div class="chat-tools"><button id="chatNew" aria-label="Start new conversation" title="New conversation">＋</button><button id="chatClear" aria-label="Clear conversation" title="Clear conversation">⌫</button><button id="chatClose" aria-label="Close assistant" title="Close assistant">×</button></div></header>
     <div id="chatMessages" class="chat-messages" role="log" aria-live="polite"></div>
     <div class="chat-suggestions" id="chatSuggestions">
@@ -93,6 +87,6 @@
   </section>
 
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=20260808-ui1"></script>
+  <script src="/static/app.js?v=20260808-delivery1"></script>
 </body>
 </html>
