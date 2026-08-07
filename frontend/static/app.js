@@ -32,6 +32,9 @@ function updateRequirementCount() {
 
 function chatReply(question) {
   const q = question.toLowerCase();
+  if (/^(hi|hello|hey|good morning|good afternoon)\b/.test(q)) return 'Hi! I’m ready to help you understand the workflow or guide your next action.';
+  if (/\b(thanks|thank you|great|good|cool|nice|okay|ok)\b/.test(q)) return 'Glad that helped. Ask me anything else about the workflow, or create a scenario when you want project-specific guidance.';
+  if (/\b(sorry|apolog)/.test(q)) return 'No problem at all. Tell me what you want to change or ask, and I’ll help from there.';
   if (!project) {
     if (q.includes('next') || q.includes('do') || q.includes('start')) return 'Start by entering a requirement or loading a sample scenario. Once it is captured, the first available action is Run analysis.';
     if (q.includes('coverage') || q.includes('test')) return 'Coverage is calculated after the workflow creates analysis, backlog stories, acceptance criteria, and tests. Load a scenario to see live counts here.';

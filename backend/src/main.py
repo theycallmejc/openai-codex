@@ -257,7 +257,13 @@ def workflow_assistant(project_id: str, payload: AssistantInput) -> JSONResponse
             "TRACEABILITY_VALIDATED": "Create the QA handoff package.",
             "COMPLETED": "The QA handoff is complete and ready to download or share.",
         }
-        if "approval" in message or "review" in message:
+        if re.search(r"^(hi|hello|hey|good morning|good afternoon)\b", message):
+            reply = "Hi! I can guide the next workflow step, explain approval gates, or summarize live coverage for this project."
+        elif re.search(r"\b(thanks|thank you|great|good|cool|nice|okay|ok)\b", message):
+            reply = "Glad that helped. Ask about the next step, approvals, coverage, or the QA handoff whenever you are ready."
+        elif re.search(r"\b(sorry|apolog)", message):
+            reply = "No problem. Tell me what you want to change or ask, and I will help with the current workflow."
+        elif "approval" in message or "review" in message:
             reply = "BRD and backlog reviews are mandatory human gates. Approve to continue, or request changes with a reason to regenerate that artifact."
         elif "coverage" in message or "test" in message:
             requirements = len((artifacts.get("analysis") or {}).get("functional_requirements", []))

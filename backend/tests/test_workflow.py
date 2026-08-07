@@ -41,3 +41,5 @@ def test_project_assistant_returns_contextual_workflow_guidance(tmp_path,monkeyp
     assert response.status_code==200
     assert data["state"]=="REQUIREMENT_CAPTURED"
     assert "Run analysis" in data["reply"]
+    friendly=c.post(f"/api/projects/{p}/assistant",json={"message":"cool"}).json()["data"]
+    assert "Glad that helped" in friendly["reply"]
