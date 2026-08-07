@@ -38,6 +38,10 @@ class DecisionInput(BaseModel):
     reason: str = Field(default="", max_length=2000)
 
 
+class AssistantInput(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -232,6 +236,42 @@ def create_project(payload: ProjectInput) -> JSONResponse:
 def get_project(project_id: str) -> JSONResponse:
     with db() as c:
         return envelope(project_payload(c, project_row(c, project_id)))
+
+
+@app.post("/api/projects/{project_id}/assistant")
+def workflow_assistant(project_id: str, payload: AssistantInput) -> JSONResponse:
+    """Provide deterministic, project-aware guidance for the local assistant."""
+    with db() as c:
+        project = project_row(c, project_id)
+        artifacts = project_payload(c, project)["artifacts"]
+        message = payload.message.lower()
+        state = project["state"]
+        next_steps = {
+            "REQUIREMENT_CAPTURED": "Run analysis to turn the requirement into structured functional requirements.",
+            "ANALYSIS_COMPLETED": "Generate the BRD from the completed analysis.",
+            "BRD_AWAITING_APPROVAL": "A reviewer must approve or request changes to the BRD before the backlog can run.",
+            "BRD_APPROVED": "Generate the backlog from the approved BRD.",
+            "BACKLOG_AWAITING_APPROVAL": "A reviewer must approve or request changes to the backlog before tests can run.",
+            "BACKLOG_APPROVED": "Generate tests from the approved backlog.",
+            "TESTS_GENERATED": "Validate traceability to link requirements, stories, and tests.",
+            "TRACEABILITY_VALIDATED": "Create the QA handoff package.",
+            "COMPLETED": "The QA handoff is complete and ready to download or share.",
+        }
+        if "approval" in message or "review" in message:
+            reply = "BRD and backlog reviews are mandatory human gates. Approve to continue, or request changes with a reason to regenerate that artifact."
+        elif "coverage" in message or "test" in message:
+            requirements = len((artifacts.get("analysis") or {}).get("functional_requirements", []))
+            stories = len((artifacts.get("backlog") or {}).get("stories", []))
+            tests = len((artifacts.get("tests") or {}).get("test_cases", []))
+            coverage = (artifacts.get("traceability") or {}).get("coverage", "not validated yet")
+            reply = f"Current coverage has {requirements} requirements, {stories} stories, and {tests} tests. Traceability is {coverage}."
+        elif "handoff" in message or "download" in message:
+            reply = "The QA handoff is ready to download." if (artifacts.get("qa_handoff") or {}).get("status") == "ready" else next_steps.get(state, "Complete the remaining workflow stages before the handoff can be created.")
+        elif "workflow" in message or "explain" in message or "help" in message:
+            reply = "FlowPilot progresses through Analysis, BRD review, Backlog review, Tests, Traceability, and a QA handoff. Automation stops at the two human approval gates."
+        else:
+            reply = f"Current state: {state.replace('_', ' ').title()}. {next_steps.get(state, 'Review the workflow status for the next available action.')}"
+        return envelope({"reply": reply, "state": state, "suggested_next_step": next_steps.get(state)})
 
 
 @app.get("/api/samples")

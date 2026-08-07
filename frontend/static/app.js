@@ -53,11 +53,25 @@ function addChatMessage(text, role = 'assistant') {
   $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
 }
 
-function askChat(question) {
+async function askChat(question) {
   const cleaned = question.trim();
   if (!cleaned) return;
   addChatMessage(cleaned, 'user');
-  window.setTimeout(() => addChatMessage(chatReply(cleaned)), 120);
+  const typing = document.createElement('div');
+  typing.className = 'chat-message assistant typing';
+  typing.innerHTML = '<i></i><i></i><i></i>';
+  $('chatMessages').append(typing);
+  $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+  try {
+    const reply = project
+      ? (await api(`/api/projects/${project.public_id}/assistant`, {message:cleaned})).reply
+      : chatReply(cleaned);
+    typing.remove();
+    addChatMessage(reply);
+  } catch (_) {
+    typing.remove();
+    addChatMessage(chatReply(cleaned));
+  }
 }
 
 function toggleChat(open) {

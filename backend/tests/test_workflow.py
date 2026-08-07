@@ -31,3 +31,13 @@ def test_duplicate_and_missing_requirement_are_rejected(tmp_path,monkeypatch):
     assert c.post(f"/api/projects/{p}/requirements",json=payload).status_code==201
     assert c.post(f"/api/projects/{p}/requirements",json=payload).status_code==409
     assert c.post(f"/api/projects/{p}/workflow/run").status_code==200
+
+
+def test_project_assistant_returns_contextual_workflow_guidance(tmp_path,monkeypatch):
+    c=client(tmp_path,monkeypatch); p=create(c)
+    c.post(f"/api/projects/{p}/requirements",json={"raw_requirement":"Users can save a shopping list."})
+    response=c.post(f"/api/projects/{p}/assistant",json={"message":"What should I do next?"})
+    data=response.json()["data"]
+    assert response.status_code==200
+    assert data["state"]=="REQUIREMENT_CAPTURED"
+    assert "Run analysis" in data["reply"]

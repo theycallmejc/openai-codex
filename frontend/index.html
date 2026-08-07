@@ -72,12 +72,13 @@
     </form>
   </dialog>
 
-  <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="false"><span>✦</span><b>Ask FlowPilot</b></button>
-  <section id="chatPanel" class="chat-panel" aria-label="FlowPilot assistant" hidden>
-    <header class="chat-head"><div><span>FLOWPILOT ASSISTANT</span><h2>Workflow guide</h2></div><button id="chatClose" aria-label="Close assistant">×</button></header>
+  <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="true"><span>✦</span><b>Ask FlowPilot</b></button>
+  <section id="chatPanel" class="chat-panel" aria-label="FlowPilot assistant">
+    <header class="chat-head"><div><span><i></i> FLOWPILOT ASSISTANT</span><h2>Workflow guide</h2></div><button id="chatClose" aria-label="Close assistant">×</button></header>
     <div id="chatMessages" class="chat-messages" role="log" aria-live="polite"></div>
     <div class="chat-suggestions" id="chatSuggestions">
       <button data-chat-question="What should I do next?">What should I do next?</button>
+      <button data-chat-question="Show my current coverage">Show coverage</button>
       <button data-chat-question="Explain this workflow">Explain this workflow</button>
       <button data-chat-question="What are the approval gates?">Approval gates</button>
     </div>
