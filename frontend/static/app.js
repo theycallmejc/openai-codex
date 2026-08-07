@@ -33,8 +33,12 @@ function updateRequirementCount() {
 function chatReply(question) {
   const q = question.toLowerCase();
   if (!project) {
-    if (q.includes('workflow') || q.includes('start')) return 'Start by describing the requirement. I will help you move it through analysis, BRD, backlog, tests, traceability, and the QA handoff.';
-    return 'Create a workflow or load a sample scenario, then ask me about its current status, approvals, or next step.';
+    if (q.includes('next') || q.includes('do') || q.includes('start')) return 'Start by entering a requirement or loading a sample scenario. Once it is captured, the first available action is Run analysis.';
+    if (q.includes('coverage') || q.includes('test')) return 'Coverage is calculated after the workflow creates analysis, backlog stories, acceptance criteria, and tests. Load a scenario to see live counts here.';
+    if (q.includes('approval') || q.includes('review')) return 'There are two mandatory approval gates: the BRD review and the backlog review. Automation deliberately pauses at each gate so a person can approve or request changes.';
+    if (q.includes('workflow') || q.includes('explain') || q.includes('help')) return 'FlowPilot converts a requirement into QA-ready evidence: Analysis → BRD → approval → Backlog → approval → Tests → Traceability → QA handoff.';
+    if (q.includes('handoff') || q.includes('download')) return 'The QA handoff becomes available after traceability is validated. It packages the approved requirement, stories, tests, and links for QA review.';
+    return 'I can explain the workflow, approval gates, coverage, or QA handoff. Create a workflow when you are ready for project-specific guidance.';
   }
   const vm = buildViewModel(project);
   if (q.includes('next') || q.includes('do') || q.includes('status')) return `You are at ${vm.currentStage}. ${vm.nextAction.detail} Your next action is: ${vm.nextAction.label}.`;
