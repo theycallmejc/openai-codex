@@ -26,6 +26,10 @@ function status(text) {
   $('status').textContent = text;
 }
 
+function updateRequirementCount() {
+  $('requirementCount').textContent = `${$('requirement').value.length.toLocaleString()} / 10,000`;
+}
+
 function time(value) {
   if (!value) return 'Unknown';
   const diff = Date.now() - new Date(value).getTime();
@@ -257,8 +261,14 @@ function actionControl(vm) {
   const n = vm.nextAction;
   if (n.nextScenario) return `<button class="primary" data-next-scenario>${n.label} <i>→</i></button>`;
   if (n.reset) return `<button class="primary" data-reset>${n.label}</button>`;
-  if (n.approve) return `<input id="reviewer" placeholder="Reviewer name"><button class="primary" data-approve="${n.approve}">${n.label} <i>→</i></button>`;
+  if (n.approve) return `<input id="reviewer" placeholder="Reviewer name" aria-label="Reviewer name"><button class="primary" data-approve="${n.approve}">${n.label} <i>→</i></button><button class="secondary" data-reject="${n.approve}">Request changes</button>`;
   return `<button class="primary" data-run="${n.path}">${n.label} <i>→</i></button>`;
+}
+
+function activitySummary() {
+  const runs = (project.agent_runs || []).slice().reverse();
+  if (!runs.length) return '';
+  return `<section class="audit agent-activity"><h2>Agent activity</h2><p>Every handoff is recorded for review.</p><div class="run-list">${runs.map(run => `<div class="run-row"><b>${run.status === 'completed' ? '✓' : '…'}</b><div><strong>${esc(run.agent.replaceAll('_', ' '))}</strong><span>${esc(run.input_artifact || 'Workflow input')} → ${esc(run.output_artifact || 'Processing')}</span></div><em class="${esc(run.status)}">${esc(run.status)}${run.completed_at ? ` · ${time(run.completed_at)}` : ''}</em></div>`).join('')}</div></section>`;
 }
 
 function metric(value) { return value === null ? '—' : esc(value); }
@@ -276,7 +286,7 @@ function render() {
   $('workspaceView').innerHTML = `
     <section class="workspace-header">
       <div><p>WORKFLOW WORKSPACE</p><h1>${vm.qaReadiness === 'Ready' ? 'Ready for QA' : esc(vm.currentStage)}</h1><span>${esc(vm.nextAction.detail)}</span></div>
-      <span class="readiness ${vm.qaReadiness.toLowerCase().replaceAll(' ', '-')}">${vm.qaReadiness}</span>
+      <div class="workspace-actions"><button class="secondary" data-automation ${vm.workflowState.includes('AWAITING') || vm.qaReadiness === 'Ready' ? 'disabled' : ''}>Run until approval</button><span class="readiness ${vm.qaReadiness.toLowerCase().replaceAll(' ', '-')}">${vm.qaReadiness}</span></div>
     </section>
 
     <section class="workflow-stepper" aria-label="Workflow progress">
@@ -288,6 +298,7 @@ function render() {
         <nav class="artifact-tabs" aria-label="Artifacts">${tabs.map(x => `<button data-artifact="${x}" class="${view === x ? 'selected' : ''}" ${vm.available[x] ? '' : 'disabled'}>${x}</button>`).join('')}</nav>
         <article class="artifact-view">${artifact(vm)}</article>
         <section class="audit">${auditSummary()}</section>
+        ${activitySummary()}
       </section>
 
       <aside class="context-rail">
@@ -322,6 +333,11 @@ function bindWorkspace(vm) {
   document.querySelector('[data-download]')?.addEventListener('click', () => downloadHandoff(vm));
   document.querySelectorAll('[data-run]').forEach(button => button.onclick = () => run(button.dataset.run));
   document.querySelectorAll('[data-approve]').forEach(button => button.onclick = () => run(`${button.dataset.approve}/approve`, {reviewer:$('reviewer').value || 'Reviewer'}));
+  document.querySelectorAll('[data-reject]').forEach(button => button.onclick = () => {
+    const reason = window.prompt('Describe the changes required before regeneration:');
+    if (reason?.trim()) run(`${button.dataset.reject}/reject`, {reviewer:$('reviewer').value || 'Reviewer', reason:reason.trim()});
+  });
+  document.querySelectorAll('[data-automation]').forEach(button => button.onclick = runAutomation);
   document.querySelectorAll('[data-next]').forEach(button => button.onclick = () => vm.nextAction.path ? run(vm.nextAction.path) : render());
   document.querySelectorAll('[data-reset]').forEach(button => button.onclick = reset);
   document.querySelectorAll('[data-next-scenario]').forEach(button => button.onclick = openNextScenario);
@@ -358,12 +374,25 @@ async function run(path, body = {}) {
   } catch (error) { status(`Failed: ${error.message}`); }
 }
 
+async function runAutomation() {
+  try {
+    status('Running safe automation');
+    for (let step = 0; step < 6; step += 1) {
+      const result = await api(`/api/projects/${project.public_id}/automation/run-next`, {});
+      project = await api(`/api/projects/${project.public_id}`);
+      if (result.status === 'blocked' || result.status === 'idle' || project.state.includes('AWAITING')) break;
+    }
+    render();
+  } catch (error) { status(`Automation stopped: ${error.message}`); }
+}
+
 function reset(prefill = '') {
   project = null;
   view = 'Requirement';
   $('workspaceView').hidden = true;
   $('creationView').hidden = false;
   $('requirement').value = prefill;
+  updateRequirementCount();
   $('formError').textContent = '';
   $('formProgress').hidden = true;
   document.querySelector('.form-foot').hidden = false;
@@ -420,7 +449,8 @@ $('workflowForm').addEventListener('submit', async event => {
   }
 });
 
-$('clearForm').onclick = () => { $('requirement').value = ''; $('formError').textContent = ''; };
+$('clearForm').onclick = () => { $('requirement').value = ''; $('formError').textContent = ''; updateRequirementCount(); };
+$('requirement').addEventListener('input', updateRequirementCount);
 $('navNew').onclick = () => reset();
 $('startNextScenario').onclick = () => {
   const selected = samples[$('nextScenarioSelect').value];
@@ -438,6 +468,7 @@ api('/api/samples').then(data => {
     const sample = samples[event.target.value];
     if (sample) {
       $('requirement').value = sample.raw_requirement;
+      updateRequirementCount();
       $('formHint').textContent = `Loaded “${sample.name}”. Review it before creating the workflow.`;
     }
   };
