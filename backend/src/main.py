@@ -20,6 +20,14 @@ DB_PATH = Path(os.getenv("SDLC_DATABASE_PATH", str(ROOT / "data" / "sdlc-framewo
 RULES_VERSION = "automated-rules-v1"
 MAX_REQUIREMENT_LENGTH = 10_000
 STATES = {"DRAFT", "REQUIREMENT_CAPTURED", "ANALYSIS_COMPLETED", "BRD_GENERATED", "BRD_AWAITING_APPROVAL", "BRD_APPROVED", "BRD_REJECTED", "BACKLOG_GENERATED", "BACKLOG_AWAITING_APPROVAL", "BACKLOG_APPROVED", "BACKLOG_REJECTED", "TESTS_GENERATED", "TRACEABILITY_VALIDATED", "QA_HANDOFF_READY", "COMPLETED", "FAILED"}
+ASSISTANT_CONTEXT_WINDOW = 8
+ASSISTANT_RATE_LIMIT = 30
+ASSISTANT_KNOWLEDGE = {
+    "application": "FlowPilot",
+    "purpose": "A local SDLC-to-QA workflow application that turns a requirement into governed, QA-ready artifacts.",
+    "workflow": "Requirement → Analysis → BRD → human approval → Backlog → human approval → Tests → Traceability → QA handoff.",
+    "limitations": "This local MVP uses deterministic generation and has no configured external LLM provider, authentication system, or multi-user sharing.",
+}
 
 app = FastAPI(title="Automated SDLC-to-QA MVP", version="1.0.0")
 
@@ -40,6 +48,7 @@ class DecisionInput(BaseModel):
 
 class AssistantInput(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
+    conversation_id: str | None = Field(default=None, max_length=64)
 
 
 def now() -> str:
@@ -88,6 +97,9 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS artifact_revisions (id INTEGER PRIMARY KEY, project_id INTEGER, artifact_type TEXT, version INTEGER, workflow_stage TEXT, approval_state TEXT, content_json TEXT, created_at TEXT, UNIQUE(project_id,artifact_type,version));
         CREATE TABLE IF NOT EXISTS workflow_audit_events (id INTEGER PRIMARY KEY, event_id TEXT UNIQUE, project_id INTEGER, artifact_type TEXT, artifact_version INTEGER, actor TEXT, action TEXT, previous_state TEXT, new_state TEXT, timestamp TEXT, reason TEXT, metadata_json TEXT);
         CREATE TABLE IF NOT EXISTS agent_runs (id INTEGER PRIMARY KEY, run_id TEXT UNIQUE, project_id INTEGER, agent TEXT, status TEXT, input_artifact TEXT, output_artifact TEXT, started_at TEXT, completed_at TEXT, error TEXT);
+        CREATE TABLE IF NOT EXISTS assistant_conversations (id TEXT PRIMARY KEY, project_id INTEGER, title TEXT, created_at TEXT, updated_at TEXT);
+        CREATE TABLE IF NOT EXISTS assistant_messages (id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT, created_at TEXT, FOREIGN KEY(conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE);
+        CREATE INDEX IF NOT EXISTS idx_assistant_messages_conversation ON assistant_messages(conversation_id, created_at);
         """)
 
 
@@ -238,46 +250,80 @@ def get_project(project_id: str) -> JSONResponse:
         return envelope(project_payload(c, project_row(c, project_id)))
 
 
+def assistant_reply(project: sqlite3.Row | None, artifacts: dict[str, Any], message: str, history: list[sqlite3.Row]) -> str:
+    """Trusted app knowledge + bounded conversation context; never treats user text as instructions."""
+    text = message.strip().lower()
+    if any(term in text for term in ("system prompt", "instructions", "api key", "secret", "credential")):
+        return "I can’t provide internal instructions, credentials, or configuration. I can help with FlowPilot’s supported workflow and artifacts."
+    prior_user = next((row["content"] for row in reversed(history) if row["role"] == "user"), "")
+    if text in {"explain that", "why?", "why", "give me an example"} and prior_user:
+        text = f"{text} {prior_user.lower()}"
+    if re.search(r"^(hi|hello|hey)\b", text): return "Hi. I can explain FlowPilot, guide the next workflow action, or summarize coverage."
+    if re.search(r"\b(thanks|thank you|great|good|cool|nice|okay|ok)\b", text): return "Glad that helped. What would you like to do next?"
+    if "approval" in text or "review" in text: return "BRD and backlog reviews are the two human gates. Automation pauses there so a reviewer can approve or request changes with a recorded reason."
+    if "what does" in text or "workflow" in text or "how does" in text or "explain" in text: return f"{ASSISTANT_KNOWLEDGE['purpose']} The workflow is: {ASSISTANT_KNOWLEDGE['workflow']}"
+    if not project: return "Create a workflow or load a sample to receive project-specific help. I can also explain the workflow, approval gates, coverage, or QA handoff."
+    state = project["state"]
+    steps = {"REQUIREMENT_CAPTURED":"Run analysis.","ANALYSIS_COMPLETED":"Generate the BRD.","BRD_AWAITING_APPROVAL":"Review the BRD.","BRD_APPROVED":"Generate the backlog.","BACKLOG_AWAITING_APPROVAL":"Review the backlog.","BACKLOG_APPROVED":"Generate tests.","TESTS_GENERATED":"Validate traceability.","TRACEABILITY_VALIDATED":"Create the QA handoff.","COMPLETED":"Download or share the QA handoff."}
+    if "coverage" in text or "test" in text:
+        return f"Coverage currently has {len((artifacts.get('analysis') or {}).get('functional_requirements', []))} requirements, {len((artifacts.get('backlog') or {}).get('stories', []))} stories, and {len((artifacts.get('tests') or {}).get('test_cases', []))} tests. Traceability is {(artifacts.get('traceability') or {}).get('coverage', 'not validated yet')}."
+    if "handoff" in text or "download" in text: return "The QA handoff is ready to download." if (artifacts.get("qa_handoff") or {}).get("status") == "ready" else steps.get(state, "Complete the remaining workflow stages before creating the handoff.")
+    return f"Current state: {state.replace('_', ' ').title()}. {steps.get(state, 'Review the workflow status for the next action.')}"
+
+
+def assistant_message(c: sqlite3.Connection, project: sqlite3.Row | None, payload: AssistantInput) -> dict[str, Any]:
+    content = re.sub(r"\s+", " ", payload.message).strip()
+    if not content: raise HTTPException(422, {"code":"EMPTY_MESSAGE", "message":"Enter a message before sending."})
+    project_key = project["id"] if project else None
+    recent = c.execute("SELECT COUNT(*) FROM assistant_messages WHERE role='user' AND created_at > datetime('now','-1 minute')").fetchone()[0]
+    if recent >= ASSISTANT_RATE_LIMIT: raise HTTPException(429, {"code":"ASSISTANT_RATE_LIMITED", "message":"Please wait a moment before sending more messages."})
+    conversation_id = payload.conversation_id
+    if conversation_id:
+        conversation = c.execute("SELECT * FROM assistant_conversations WHERE id=? AND project_id IS ?", (conversation_id, project_key)).fetchone()
+        if not conversation: raise HTTPException(404, {"code":"CONVERSATION_NOT_FOUND", "message":"That conversation is unavailable. Start a new one."})
+    else:
+        conversation_id = str(uuid.uuid4()); c.execute("INSERT INTO assistant_conversations(id,project_id,title,created_at,updated_at) VALUES(?,?,?,?,?)", (conversation_id, project_key, content[:60], now(), now()))
+    history = c.execute("SELECT role,content,created_at FROM assistant_messages WHERE conversation_id=? ORDER BY created_at DESC LIMIT ?", (conversation_id, ASSISTANT_CONTEXT_WINDOW)).fetchall()[::-1]
+    c.execute("INSERT INTO assistant_messages(id,conversation_id,role,content,created_at) VALUES(?,?,?,?,?)", (str(uuid.uuid4()), conversation_id, "user", content, now()))
+    artifacts = project_payload(c, project)["artifacts"] if project else {}
+    reply = assistant_reply(project, artifacts, content, history)
+    message_id = str(uuid.uuid4()); c.execute("INSERT INTO assistant_messages(id,conversation_id,role,content,created_at) VALUES(?,?,?,?,?)", (message_id, conversation_id, "assistant", reply, now()))
+    c.execute("UPDATE assistant_conversations SET updated_at=? WHERE id=?", (now(), conversation_id))
+    return {"conversation_id":conversation_id, "message_id":message_id, "reply":reply, "state":project["state"] if project else "WELCOME"}
+
+
+@app.post("/api/assistant")
+def general_assistant(payload: AssistantInput) -> JSONResponse:
+    with db() as c: return envelope(assistant_message(c, None, payload))
+
+
 @app.post("/api/projects/{project_id}/assistant")
 def workflow_assistant(project_id: str, payload: AssistantInput) -> JSONResponse:
-    """Provide deterministic, project-aware guidance for the local assistant."""
+    with db() as c: return envelope(assistant_message(c, project_row(c, project_id), payload))
+
+
+@app.get("/api/projects/{project_id}/assistant/conversations")
+def assistant_conversations(project_id: str) -> JSONResponse:
     with db() as c:
         project = project_row(c, project_id)
-        artifacts = project_payload(c, project)["artifacts"]
-        message = payload.message.lower()
-        state = project["state"]
-        next_steps = {
-            "REQUIREMENT_CAPTURED": "Run analysis to turn the requirement into structured functional requirements.",
-            "ANALYSIS_COMPLETED": "Generate the BRD from the completed analysis.",
-            "BRD_AWAITING_APPROVAL": "A reviewer must approve or request changes to the BRD before the backlog can run.",
-            "BRD_APPROVED": "Generate the backlog from the approved BRD.",
-            "BACKLOG_AWAITING_APPROVAL": "A reviewer must approve or request changes to the backlog before tests can run.",
-            "BACKLOG_APPROVED": "Generate tests from the approved backlog.",
-            "TESTS_GENERATED": "Validate traceability to link requirements, stories, and tests.",
-            "TRACEABILITY_VALIDATED": "Create the QA handoff package.",
-            "COMPLETED": "The QA handoff is complete and ready to download or share.",
-        }
-        if re.search(r"^(hi|hello|hey|good morning|good afternoon)\b", message):
-            reply = "Hi! I can guide the next workflow step, explain approval gates, or summarize live coverage for this project."
-        elif re.search(r"\b(thanks|thank you|great|good|cool|nice|okay|ok)\b", message):
-            reply = "Glad that helped. Ask about the next step, approvals, coverage, or the QA handoff whenever you are ready."
-        elif re.search(r"\b(sorry|apolog)", message):
-            reply = "No problem. Tell me what you want to change or ask, and I will help with the current workflow."
-        elif "approval" in message or "review" in message:
-            reply = "BRD and backlog reviews are mandatory human gates. Approve to continue, or request changes with a reason to regenerate that artifact."
-        elif "coverage" in message or "test" in message:
-            requirements = len((artifacts.get("analysis") or {}).get("functional_requirements", []))
-            stories = len((artifacts.get("backlog") or {}).get("stories", []))
-            tests = len((artifacts.get("tests") or {}).get("test_cases", []))
-            coverage = (artifacts.get("traceability") or {}).get("coverage", "not validated yet")
-            reply = f"Current coverage has {requirements} requirements, {stories} stories, and {tests} tests. Traceability is {coverage}."
-        elif "handoff" in message or "download" in message:
-            reply = "The QA handoff is ready to download." if (artifacts.get("qa_handoff") or {}).get("status") == "ready" else next_steps.get(state, "Complete the remaining workflow stages before the handoff can be created.")
-        elif "workflow" in message or "explain" in message or "help" in message:
-            reply = "FlowPilot progresses through Analysis, BRD review, Backlog review, Tests, Traceability, and a QA handoff. Automation stops at the two human approval gates."
-        else:
-            reply = f"Current state: {state.replace('_', ' ').title()}. {next_steps.get(state, 'Review the workflow status for the next available action.')}"
-        return envelope({"reply": reply, "state": state, "suggested_next_step": next_steps.get(state)})
+        rows = c.execute("SELECT id,title,created_at,updated_at FROM assistant_conversations WHERE project_id=? ORDER BY updated_at DESC LIMIT 20", (project["id"],)).fetchall()
+        return envelope([dict(row) for row in rows])
+
+
+@app.get("/api/projects/{project_id}/assistant/conversations/{conversation_id}")
+def assistant_conversation(project_id: str, conversation_id: str) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        rows = c.execute("SELECT id,role,content,created_at FROM assistant_messages WHERE conversation_id=? AND EXISTS(SELECT 1 FROM assistant_conversations WHERE id=? AND project_id=?) ORDER BY created_at", (conversation_id, conversation_id, project["id"])).fetchall()
+        return envelope([dict(row) for row in rows])
+
+
+@app.delete("/api/projects/{project_id}/assistant/conversations/{conversation_id}")
+def clear_assistant_conversation(project_id: str, conversation_id: str) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        c.execute("DELETE FROM assistant_messages WHERE conversation_id=? AND EXISTS(SELECT 1 FROM assistant_conversations WHERE id=? AND project_id=?)", (conversation_id, conversation_id, project["id"]))
+        return envelope({"conversation_id":conversation_id, "cleared":True})
 
 
 @app.get("/api/samples")

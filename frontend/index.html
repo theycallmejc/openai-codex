@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260808-chat2">
+  <link rel="stylesheet" href="/static/styles.css?v=20260808-chat4">
 </head>
 <body>
   <div class="app-shell">
@@ -74,7 +74,7 @@
 
   <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="true"><span>✦</span><b>Ask FlowPilot</b></button>
   <section id="chatPanel" class="chat-panel" aria-label="FlowPilot assistant">
-    <header class="chat-head"><div><span><i></i> FLOWPILOT ASSISTANT</span><h2>Workflow guide</h2></div><button id="chatClose" aria-label="Close assistant">×</button></header>
+    <header class="chat-head"><div><span><i></i> FLOWPILOT ASSISTANT</span><h2>Workflow guide</h2></div><div class="chat-tools"><button id="chatNew" aria-label="Start new conversation" title="New conversation">＋</button><button id="chatClear" aria-label="Clear conversation" title="Clear conversation">⌫</button><button id="chatClose" aria-label="Close assistant" title="Close assistant">×</button></div></header>
     <div id="chatMessages" class="chat-messages" role="log" aria-live="polite"></div>
     <div class="chat-suggestions" id="chatSuggestions">
       <button data-chat-question="What should I do next?">What should I do next?</button>
@@ -82,9 +82,9 @@
       <button data-chat-question="Explain this workflow">Explain this workflow</button>
       <button data-chat-question="What are the approval gates?">Approval gates</button>
     </div>
-    <form id="chatForm" class="chat-form"><input id="chatInput" autocomplete="off" placeholder="Ask about this workflow…"><button class="primary" aria-label="Send message">↑</button></form>
+    <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask about this workflow…"></textarea><button id="chatSend" class="primary" aria-label="Send message">↑</button></form>
   </section>
 
-  <script src="/static/app.js?v=20260808-chat3"></script>
+  <script src="/static/app.js?v=20260808-chat4"></script>
 </body>
 </html>

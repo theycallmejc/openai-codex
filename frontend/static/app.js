@@ -2,6 +2,8 @@ const $ = id => document.getElementById(id);
 let project = null;
 let view = 'Requirement';
 let samples = [];
+let chatConversationId = null;
+let chatAbortController = null;
 
 const tabs = ['Requirement', 'Analysis', 'BRD', 'Backlog', 'Tests', 'Traceability', 'QA Handoff'];
 const stages = [
@@ -56,13 +58,19 @@ function addChatMessage(text, role = 'assistant') {
   const message = document.createElement('div');
   message.className = `chat-message ${role}`;
   message.textContent = text;
+  if (role === 'assistant') {
+    const copy = document.createElement('button');
+    copy.className = 'chat-copy'; copy.type = 'button'; copy.textContent = 'Copy'; copy.setAttribute('aria-label', 'Copy assistant response');
+    copy.onclick = () => navigator.clipboard?.writeText(text).then(() => { copy.textContent = 'Copied'; window.setTimeout(() => { copy.textContent = 'Copy'; }, 1200); });
+    message.append(copy);
+  }
   $('chatMessages').append(message);
   $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
 }
 
 async function askChat(question) {
   const cleaned = question.trim();
-  if (!cleaned) return;
+  if (!cleaned || chatAbortController) return;
   addChatMessage(cleaned, 'user');
   const typing = document.createElement('div');
   typing.className = 'chat-message assistant typing';
@@ -70,14 +78,19 @@ async function askChat(question) {
   $('chatMessages').append(typing);
   $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
   try {
-    const reply = project
-      ? (await api(`/api/projects/${project.public_id}/assistant`, {message:cleaned})).reply
-      : chatReply(cleaned);
+    chatAbortController = new AbortController();
+    const endpoint = project ? `/api/projects/${project.public_id}/assistant` : '/api/assistant';
+    const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:cleaned, conversation_id:chatConversationId}), signal:chatAbortController.signal});
+    const json = await response.json();
+    if (!response.ok || !json.success || !json.data?.reply) throw Error(json.error?.message || 'The assistant did not return a response.');
+    chatConversationId = json.data.conversation_id;
     typing.remove();
-    addChatMessage(reply);
-  } catch (_) {
+    addChatMessage(json.data.reply);
+  } catch (error) {
     typing.remove();
-    addChatMessage(chatReply(cleaned));
+    addChatMessage(error.name === 'AbortError' ? 'Response stopped.' : 'I could not respond right now. Please retry your message.');
+  } finally {
+    chatAbortController = null;
   }
 }
 
@@ -518,7 +531,10 @@ $('startNextScenario').onclick = () => {
 
 $('chatToggle').onclick = () => toggleChat($('chatPanel').hidden);
 $('chatClose').onclick = () => toggleChat(false);
-$('chatForm').addEventListener('submit', event => { event.preventDefault(); askChat($('chatInput').value); $('chatInput').value = ''; });
+$('chatNew').onclick = () => { chatConversationId = null; $('chatMessages').replaceChildren(); addChatMessage('New conversation started. How can I help?'); };
+$('chatClear').onclick = async () => { if (chatConversationId && project) await fetch(`/api/projects/${project.public_id}/assistant/conversations/${chatConversationId}`, {method:'DELETE'}); $('chatNew').click(); };
+$('chatForm').addEventListener('submit', event => { event.preventDefault(); const message = $('chatInput').value; $('chatInput').value = ''; askChat(message); });
+$('chatInput').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('chatForm').requestSubmit(); } if (event.key === 'Escape' && chatAbortController) chatAbortController.abort(); });
 document.querySelectorAll('[data-chat-question]').forEach(button => button.onclick = () => askChat(button.dataset.chatQuestion));
 addChatMessage('Hi, I’m your workflow guide. Ask what to do next, or choose a quick question below.');
 
