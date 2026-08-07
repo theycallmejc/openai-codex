@@ -29,13 +29,16 @@
       <header class="topbar"><span id="crumb">New workflow</span><div class="topbar-actions"><span id="status" hidden></span><button id="themeToggle" class="icon-button" aria-label="Toggle color theme" title="Toggle color theme">◐</button></div></header>
 
       <section id="creationView" class="creation-view">
+        <header class="new-hero"><div><p>NEW WORKFLOW</p><h1>Turn a requirement into<br>QA-ready artifacts.</h1><span>Describe what you're building, set review gates, and generate traceable delivery evidence.</span></div><div class="hero-orbit" aria-hidden="true"><i></i><i></i><b>FP</b><small>ORCHESTRATE</small></div></header>
+        <section class="creation-stepper" aria-label="Workflow setup progress"><div class="setup-step active"><b>01</b><span><strong>Describe</strong><small>Capture the requirement</small></span></div><i></i><div class="setup-step"><b>02</b><span><strong>Configure agents</strong><small>Analysis and QA handoffs</small></span></div><i></i><div class="setup-step"><b>03</b><span><strong>Review gates</strong><small>Human approval controls</small></span></div><i></i><div class="setup-step"><b>04</b><span><strong>Generate</strong><small>QA-ready artifacts</small></span></div></section>
+        <div class="creation-grid">
         <header class="page-head motion-surface" data-pointer-glow>
           <p>NEW WORKFLOW</p>
           <h1>Turn a requirement into QA-ready artifacts</h1>
           <span>Capture one requirement, then run each agent and approval gate in sequence.</span>
         </header>
 
-        <form id="workflowForm" class="requirement-form motion-surface" data-pointer-glow>
+        <form id="workflowForm" class="requirement-form composer motion-surface" data-pointer-glow>
           <div class="form-head">
             <div><h2>What are you building?</h2><p>Describe the intended behaviour, rules, and outcome.</p></div>
             <label>Load sample scenario<select id="sampleRequirement"><option>Loading scenarios...</option></select></label>
@@ -44,6 +47,7 @@
           <textarea id="requirement" required placeholder="Describe the feature, its users, business rules, and expected outcome."></textarea>
           <div class="input-meta"><span>Include users, rules, and the expected result for the strongest handoff.</span><strong id="requirementCount">0 / 10,000</strong></div>
           <div class="prompt-chips" aria-label="Requirement templates"><button type="button" data-prompt="Users & personas">Users & personas</button><button type="button" data-prompt="Business rules">Business rules</button><button type="button" data-prompt="Acceptance criteria">Acceptance criteria</button><button type="button" data-prompt="Expected outcome">Expected outcome</button><button type="button" data-prompt="Constraints">Constraints</button><button type="button" data-prompt="Edge cases">Edge cases</button></div>
+          <button type="button" id="aiImprove" class="ai-assist">✦ Improve with FlowPilot AI</button><section id="aiSuggestion" class="ai-suggestion" hidden><div><p>FLOWPILOT SUGGESTS</p><strong>Make the requirement easier to test</strong><span>Add actors, a failure path, acceptance criteria, and validation constraints.</span></div><div><button type="button" id="applyAiSuggestion" class="secondary">Apply structure</button><button type="button" id="dismissAiSuggestion" class="icon-button" aria-label="Dismiss suggestion">×</button></div></section>
           <div id="formProgress" class="form-progress" role="status" aria-live="polite" hidden></div>
           <div class="form-foot">
             <span id="formHint">Your requirement becomes the first saved workflow artifact.</span>
@@ -51,6 +55,8 @@
           </div>
           <p id="formError" role="alert"></p>
         </form>
+        <aside class="intelligence-rail"><section><p>REQUIREMENT QUALITY <small>Heuristic</small></p><h2>Ready to strengthen</h2><div class="quality-list"><span>Clarity <b id="qualityClarity">Needs input</b></span><span>Business rules <b id="qualityRules">Missing</b></span><span>Acceptance criteria <b id="qualityAcceptance">Missing</b></span><span>Constraints <b id="qualityConstraints">Missing</b></span></div></section><section><p>AT A GLANCE</p><div class="at-glance"><span><b>6</b>Agents configured</span><span><b>2</b>Approval gates</span><span><b>—</b>Last run</span><span><b>Local</b>Execution mode</span></div></section><section class="tip-panel"><p>PRO TIP</p><strong>Requirements with users, rules, acceptance criteria, and constraints produce stronger QA artifacts.</strong></section></aside>
+        </div>
       </section>
 
       <section id="workspaceView" hidden></section>

@@ -43,6 +43,11 @@ function setTheme(theme) {
 
 function updateRequirementCount() {
   $('requirementCount').textContent = `${$('requirement').value.length.toLocaleString()} / 10,000`;
+  const text = $('requirement').value.toLowerCase();
+  $('qualityClarity').textContent = text.length > 80 ? 'Good' : 'Needs detail';
+  $('qualityRules').textContent = /rule|must|only|cannot/.test(text) ? 'Present' : 'Missing';
+  $('qualityAcceptance').textContent = /given|when|then|acceptance/.test(text) ? 'Present' : 'Partial';
+  $('qualityConstraints').textContent = /constraint|limit|within|permission|secure/.test(text) ? 'Present' : 'Missing';
 }
 
 function chatReply(question) {
@@ -539,11 +544,15 @@ document.querySelectorAll('[data-prompt]').forEach(button => button.onclick = ()
   const templates = {'Users & personas':'Users and personas:\n- Primary user: \n- Secondary user: ','Business rules':'Business rules:\n- ','Acceptance criteria':'Acceptance criteria:\n- Given \n- When \n- Then ','Expected outcome':'Expected outcome:\n- ','Constraints':'Constraints:\n- ','Edge cases':'Edge cases:\n- '};
   const area = $('requirement'); area.value = `${area.value.trim()}${area.value.trim() ? '\n\n' : ''}${templates[button.dataset.prompt]}`; area.focus(); updateRequirementCount();
 });
+$('aiImprove').onclick = () => { $('aiSuggestion').hidden = false; };
+$('dismissAiSuggestion').onclick = () => { $('aiSuggestion').hidden = true; };
+$('applyAiSuggestion').onclick = () => { const area = $('requirement'); area.value = `${area.value.trim()}\n\nAcceptance Criteria:\n- Given a valid user\n- When they complete the requested action\n- Then the expected outcome is recorded\n\nConstraints:\n- Define validation and failure handling`; $('aiSuggestion').hidden = true; updateRequirementCount(); toast('Suggestion structure applied', 'success'); };
 $('themeToggle').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 $('sidebarToggle').onclick = () => { const collapsed = $('sidebar').classList.toggle('collapsed'); localStorage.setItem('flowpilot.sidebar-collapsed', String(collapsed)); $('sidebarToggle').textContent = collapsed ? '›' : '‹'; };
 setTheme(localStorage.getItem('flowpilot.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 if (localStorage.getItem('flowpilot.sidebar-collapsed') === 'true') $('sidebarToggle').click();
 $('navNew').onclick = () => reset();
+$('requirement').addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') $('workflowForm').requestSubmit(); });
 $('startNextScenario').onclick = () => {
   const selected = samples[$('nextScenarioSelect').value];
   $('nextScenarioDialog').close();
