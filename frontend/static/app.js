@@ -30,6 +30,42 @@ function updateRequirementCount() {
   $('requirementCount').textContent = `${$('requirement').value.length.toLocaleString()} / 10,000`;
 }
 
+function chatReply(question) {
+  const q = question.toLowerCase();
+  if (!project) {
+    if (q.includes('workflow') || q.includes('start')) return 'Start by describing the requirement. I will help you move it through analysis, BRD, backlog, tests, traceability, and the QA handoff.';
+    return 'Create a workflow or load a sample scenario, then ask me about its current status, approvals, or next step.';
+  }
+  const vm = buildViewModel(project);
+  if (q.includes('next') || q.includes('do') || q.includes('status')) return `You are at ${vm.currentStage}. ${vm.nextAction.detail} Your next action is: ${vm.nextAction.label}.`;
+  if (q.includes('approval') || q.includes('review')) return 'BRD and backlog approvals are the two human gates. You can approve to continue, or use Request changes to record a reason and regenerate the artifact.';
+  if (q.includes('coverage') || q.includes('test')) return `Current coverage: ${vm.coverage.requirements ?? 0} requirements, ${vm.coverage.stories ?? 0} stories, ${vm.coverage.criteria ?? 0} acceptance criteria, and ${vm.coverage.tests ?? 0} tests. Traceability is ${vm.coverage.traceability ?? 'not validated yet'}.`;
+  if (q.includes('workflow') || q.includes('explain') || q.includes('help')) return 'FlowPilot turns a requirement into governed QA artifacts: Analysis → BRD → approval → Backlog → approval → Tests → Traceability → QA handoff. Use Run until approval to automate every safe step.';
+  if (q.includes('handoff') || q.includes('download')) return vm.qaReadiness === 'Ready' ? 'The QA handoff is ready. Open the QA Handoff tab to download a JSON package or copy its summary.' : `The handoff is not ready yet. ${vm.nextAction.detail}`;
+  return `I can help with the next action, approvals, test coverage, traceability, or QA handoff. Right now, ${vm.nextAction.detail}`;
+}
+
+function addChatMessage(text, role = 'assistant') {
+  const message = document.createElement('div');
+  message.className = `chat-message ${role}`;
+  message.textContent = text;
+  $('chatMessages').append(message);
+  $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+}
+
+function askChat(question) {
+  const cleaned = question.trim();
+  if (!cleaned) return;
+  addChatMessage(cleaned, 'user');
+  window.setTimeout(() => addChatMessage(chatReply(cleaned)), 120);
+}
+
+function toggleChat(open) {
+  $('chatPanel').hidden = !open;
+  $('chatToggle').setAttribute('aria-expanded', String(open));
+  if (open) $('chatInput').focus();
+}
+
 function time(value) {
   if (!value) return 'Unknown';
   const diff = Date.now() - new Date(value).getTime();
@@ -458,6 +494,12 @@ $('startNextScenario').onclick = () => {
   reset(selected?.raw_requirement || '');
   if (selected) $('formHint').textContent = `Loaded “${selected.name}”. Review it before creating the workflow.`;
 };
+
+$('chatToggle').onclick = () => toggleChat($('chatPanel').hidden);
+$('chatClose').onclick = () => toggleChat(false);
+$('chatForm').addEventListener('submit', event => { event.preventDefault(); askChat($('chatInput').value); $('chatInput').value = ''; });
+document.querySelectorAll('[data-chat-question]').forEach(button => button.onclick = () => askChat(button.dataset.chatQuestion));
+addChatMessage('Hi, I’m your workflow guide. Ask what to do next, or choose a quick question below.');
 
 api('/api/samples').then(data => {
   samples = data;
