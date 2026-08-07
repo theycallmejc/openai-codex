@@ -28,6 +28,19 @@ function status(text) {
   $('status').textContent = text;
 }
 
+function toast(message, type = 'info') {
+  const item = document.createElement('div');
+  item.className = `toast ${type}`; item.textContent = message;
+  $('toasts').append(item);
+  window.setTimeout(() => item.remove(), 3600);
+}
+
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('flowpilot.theme', theme);
+  $('themeToggle').textContent = theme === 'dark' ? '☀' : '◐';
+}
+
 function updateRequirementCount() {
   $('requirementCount').textContent = `${$('requirement').value.length.toLocaleString()} / 10,000`;
 }
@@ -512,6 +525,7 @@ $('workflowForm').addEventListener('submit', async event => {
     render();
   } catch (error) {
     $('formError').textContent = error.message;
+    toast(error.message, 'error');
     $('createWorkflow').disabled = false;
     $('clearForm').disabled = false;
     $('formProgress').hidden = true;
@@ -521,6 +535,14 @@ $('workflowForm').addEventListener('submit', async event => {
 
 $('clearForm').onclick = () => { $('requirement').value = ''; $('formError').textContent = ''; updateRequirementCount(); };
 $('requirement').addEventListener('input', updateRequirementCount);
+document.querySelectorAll('[data-prompt]').forEach(button => button.onclick = () => {
+  const templates = {'Users & personas':'Users and personas:\n- Primary user: \n- Secondary user: ','Business rules':'Business rules:\n- ','Acceptance criteria':'Acceptance criteria:\n- Given \n- When \n- Then ','Expected outcome':'Expected outcome:\n- ','Constraints':'Constraints:\n- ','Edge cases':'Edge cases:\n- '};
+  const area = $('requirement'); area.value = `${area.value.trim()}${area.value.trim() ? '\n\n' : ''}${templates[button.dataset.prompt]}`; area.focus(); updateRequirementCount();
+});
+$('themeToggle').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+$('sidebarToggle').onclick = () => { const collapsed = $('sidebar').classList.toggle('collapsed'); localStorage.setItem('flowpilot.sidebar-collapsed', String(collapsed)); $('sidebarToggle').textContent = collapsed ? '›' : '‹'; };
+setTheme(localStorage.getItem('flowpilot.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+if (localStorage.getItem('flowpilot.sidebar-collapsed') === 'true') $('sidebarToggle').click();
 $('navNew').onclick = () => reset();
 $('startNextScenario').onclick = () => {
   const selected = samples[$('nextScenarioSelect').value];
