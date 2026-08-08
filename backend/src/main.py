@@ -470,28 +470,79 @@ def orchestration_plan(project_id: str) -> JSONResponse:
         return envelope({"steps": build_plan(requirement["raw_text"]), "registry": [{"name": spec.name, "purpose": spec.purpose, "tools": spec.tools, "prompt_version": spec.prompt_version} for spec in REGISTRY.values()]})
 
 
+def completed_orchestration_results(c: sqlite3.Connection, project_key: int) -> dict[str, Any]:
+    """Return the most recent successful output for each agent, for explicit handoffs."""
+    rows = c.execute("SELECT agent,result_json FROM orchestrator_runs WHERE project_id=? AND status='completed' ORDER BY completed_at DESC, id DESC", (project_key,)).fetchall()
+    results: dict[str, Any] = {}
+    for row in rows:
+        if row["agent"] not in results and row["result_json"]:
+            results[row["agent"]] = json.loads(row["result_json"])
+    return results
+
+
+def run_orchestration_agent(c: sqlite3.Connection, project: sqlite3.Row, project_id: str, agent: str) -> dict[str, Any]:
+    requirement = c.execute("SELECT raw_text FROM requirements WHERE project_id=?", (project["id"],)).fetchone()
+    if not requirement:
+        raise HTTPException(409, {"code":"REQUIREMENT_REQUIRED", "message":"Capture a requirement first."})
+    steps = {step["agent"]: step for step in build_plan(requirement["raw_text"])}
+    dependencies = steps[agent].get("depends_on", [])
+    results = completed_orchestration_results(c, project["id"])
+    missing = [dependency for dependency in dependencies if dependency not in results]
+    if missing:
+        raise HTTPException(409, {"code":"AGENT_DEPENDENCY_REQUIRED", "message":f"Run {' and '.join(missing)} before {agent}.", "missing_dependencies": missing})
+    context = {"workflow_id": project_id, "requirement": requirement["raw_text"][:MAX_REQUIREMENT_LENGTH], "results": results}
+    run_id = str(uuid.uuid4())
+    c.execute("INSERT INTO orchestrator_runs(id,project_id,agent,status,attempt,context_json,started_at) VALUES(?,?,?,?,?,?,?)", (run_id, project["id"], agent, "running", 1, json.dumps({"workflow_id":project_id,"result_agents":list(results)}), now()))
+    try:
+        result = execute_agent(agent, context)
+        c.execute("UPDATE orchestrator_runs SET status='completed',result_json=?,completed_at=? WHERE id=?", (json.dumps(result), now(), run_id))
+        return {"run_id":run_id,"agent":agent,"status":"completed","result":result,"prompt_version":REGISTRY[agent].prompt_version}
+    except ValueError as exc:
+        c.execute("UPDATE orchestrator_runs SET status='failed',error=?,completed_at=? WHERE id=?", (str(exc), now(), run_id))
+        raise HTTPException(422, {"code":"AGENT_VALIDATION_FAILED", "message":"The agent output was invalid. You can retry safely."})
+
+
+@app.get("/api/projects/{project_id}/orchestration/runs")
+def orchestration_runs(project_id: str) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        rows = c.execute("SELECT id,agent,status,attempt,result_json,error,started_at,completed_at FROM orchestrator_runs WHERE project_id=? ORDER BY started_at DESC, id DESC", (project["id"],)).fetchall()
+        return envelope([{**{key: row[key] for key in ("id", "agent", "status", "attempt", "error", "started_at", "completed_at")}, "result": json.loads(row["result_json"]) if row["result_json"] else None} for row in rows])
+
+
+@app.post("/api/projects/{project_id}/orchestration/run-all")
+def orchestration_run_all(project_id: str) -> JSONResponse:
+    """Execute the registered plan in order; each persisted output becomes the next handoff."""
+    with db() as c:
+        project = project_row(c, project_id)
+        requirement = c.execute("SELECT raw_text FROM requirements WHERE project_id=?", (project["id"],)).fetchone()
+        if not requirement:
+            raise HTTPException(409, {"code":"REQUIREMENT_REQUIRED", "message":"Capture a requirement before running agents."})
+        completed = completed_orchestration_results(c, project["id"])
+        executions = []
+        for step in build_plan(requirement["raw_text"]):
+            agent = step["agent"]
+            if agent in completed:
+                executions.append({"agent": agent, "status": "reused", "result": completed[agent]})
+            else:
+                executions.append(run_orchestration_agent(c, project, project_id, agent))
+                completed = completed_orchestration_results(c, project["id"])
+        return envelope({"status": "completed", "executions": executions})
+
+
 @app.post("/api/projects/{project_id}/orchestration/{agent}/run")
 def orchestration_run(project_id: str, agent: str) -> JSONResponse:
     if agent not in REGISTRY:
         raise HTTPException(404, {"code":"AGENT_NOT_FOUND", "message":"This agent is not registered."})
     with db() as c:
         project = project_row(c, project_id)
-        requirement = c.execute("SELECT raw_text FROM requirements WHERE project_id=?", (project["id"],)).fetchone()
-        if not requirement: raise HTTPException(409, {"code":"REQUIREMENT_REQUIRED", "message":"Capture a requirement first."})
-        results = {row["agent"]: json.loads(row["result_json"]) for row in c.execute("SELECT agent,result_json FROM orchestrator_runs WHERE project_id=? AND status='completed'", (project["id"],)).fetchall() if row["result_json"]}
-        context = {"workflow_id": project_id, "requirement": requirement["raw_text"][:MAX_REQUIREMENT_LENGTH], "results": results}
-        run_id = str(uuid.uuid4()); c.execute("INSERT INTO orchestrator_runs(id,project_id,agent,status,attempt,context_json,started_at) VALUES(?,?,?,?,?,?,?)", (run_id, project["id"], agent, "running", 1, json.dumps({"workflow_id":project_id,"result_agents":list(results)}), now()))
-        try:
-            result = execute_agent(agent, context)
-            c.execute("UPDATE orchestrator_runs SET status='completed',result_json=?,completed_at=? WHERE id=?", (json.dumps(result), now(), run_id))
-            return envelope({"run_id":run_id,"agent":agent,"status":"completed","result":result,"prompt_version":REGISTRY[agent].prompt_version})
-        except ValueError as exc:
-            c.execute("UPDATE orchestrator_runs SET status='failed',error=?,completed_at=? WHERE id=?", (str(exc), now(), run_id))
-            raise HTTPException(422, {"code":"AGENT_VALIDATION_FAILED", "message":"The agent output was invalid. You can retry safely."})
+        return envelope(run_orchestration_agent(c, project, project_id, agent))
 
 
 @app.post("/api/projects/{project_id}/orchestration/{agent}/feedback")
 def agent_feedback(project_id: str, agent: str, payload: AgentFeedbackInput) -> JSONResponse:
+    if agent not in REGISTRY:
+        raise HTTPException(404, {"code":"AGENT_NOT_FOUND", "message":"This agent is not registered."})
     with db() as c:
         project = project_row(c, project_id)
         c.execute("INSERT INTO agent_feedback(id,project_id,agent,useful,reason,created_at) VALUES(?,?,?,?,?,?)", (str(uuid.uuid4()), project["id"], agent, int(payload.useful), payload.reason.strip(), now()))

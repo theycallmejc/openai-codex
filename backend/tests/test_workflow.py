@@ -95,3 +95,18 @@ def test_project_assistant_returns_contextual_workflow_guidance(tmp_path,monkeyp
     history=c.get(f"/api/projects/{p}/assistant/conversations/{conversation_id}").json()["data"]
     assert [message["role"] for message in history]==["user","assistant"]
     assert c.post(f"/api/projects/{p}/assistant",json={"message":"explain that", "conversation_id":conversation_id}).status_code==200
+
+
+def test_orchestration_runs_dependencies_in_order_and_persists_history(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch); p = create(c)
+    c.post(f"/api/projects/{p}/requirements", json={"raw_requirement":"Users can retry a password reset within five minutes. Given a valid account, when reset is requested, then send one secure link."})
+    plan = c.get(f"/api/projects/{p}/orchestration/plan").json()["data"]
+    assert [step["agent"] for step in plan["steps"]] == ["requirement", "risk", "review"]
+    blocked = c.post(f"/api/projects/{p}/orchestration/review/run")
+    assert blocked.status_code == 409 and blocked.json()["error"]["code"] == "AGENT_DEPENDENCY_REQUIRED"
+    result = c.post(f"/api/projects/{p}/orchestration/run-all")
+    assert result.status_code == 200
+    assert [item["status"] for item in result.json()["data"]["executions"]] == ["completed", "completed", "completed"]
+    runs = c.get(f"/api/projects/{p}/orchestration/runs").json()["data"]
+    assert {run["agent"] for run in runs} == {"requirement", "risk", "review"}
+    assert c.post(f"/api/projects/{p}/orchestration/review/feedback", json={"useful": True}).status_code == 200
