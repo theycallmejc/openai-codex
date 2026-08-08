@@ -23,7 +23,8 @@ async function api(url, body) {
     headers: body ? {'Content-Type':'application/json'} : {},
     body: body ? JSON.stringify(body) : undefined
   });
-  const json = await response.json();
+  let json;
+  try { json = await response.json(); } catch (_) { throw Error('The server returned an invalid response. Try again.'); }
   if (!json.success) throw Error(json.error?.message || 'Request failed');
   return json.data;
 }
@@ -554,15 +555,19 @@ function openNextScenario() {
 }
 
 async function run(path, body = {}) {
+  const controls = [...document.querySelectorAll('[data-run], [data-approve], [data-reject], [data-automation]')];
+  controls.forEach(button => { button.disabled = true; });
   try {
     status('Processing');
     await api(`/api/projects/${project.public_id}/${path}`, body);
     project = await api(`/api/projects/${project.public_id}`);
     render();
-  } catch (error) { status(`Failed: ${error.message}`); toast(error.message || 'That action could not be completed.', 'error'); }
+  } catch (error) { status(`Failed: ${error.message}`); toast(error.message || 'That action could not be completed.', 'error'); controls.forEach(button => { button.disabled = false; }); }
 }
 
 async function runAutomation() {
+  const automation = document.querySelector('[data-automation]');
+  if (automation) automation.disabled = true;
   try {
     status('Running safe automation');
     for (let step = 0; step < 6; step += 1) {
@@ -571,7 +576,7 @@ async function runAutomation() {
       if (result.status === 'blocked' || result.status === 'idle' || project.state.includes('AWAITING')) break;
     }
     render();
-  } catch (error) { status(`Automation stopped: ${error.message}`); }
+  } catch (error) { status(`Automation stopped: ${error.message}`); toast(error.message || 'Automation stopped unexpectedly.', 'error'); if (automation) automation.disabled = false; }
 }
 
 function reset(prefill = '') {
@@ -646,7 +651,7 @@ document.querySelectorAll('[data-prompt]').forEach(button => button.onclick = ()
   const templates = {'Users & personas':'Users and personas:\n- Primary user: \n- Secondary user: ','Business rules':'Business rules:\n- ','Acceptance criteria':'Acceptance criteria:\n- Given \n- When \n- Then ','Expected outcome':'Expected outcome:\n- ','Constraints':'Constraints:\n- ','Edge cases':'Edge cases:\n- '};
   const area = $('requirement'); area.value = `${area.value.trim()}${area.value.trim() ? '\n\n' : ''}${templates[button.dataset.prompt]}`; area.focus(); updateRequirementCount();
 });
-$('aiImprove').onclick = () => { const button = $('aiImprove'); button.disabled = true; button.textContent = '✦ Analyzing requirement…'; $('formProgress').hidden = false; $('formProgress').textContent = 'Finding missing constraints and acceptance criteria…'; window.setTimeout(() => { $('formProgress').hidden = true; $('aiSuggestion').hidden = false; button.disabled = false; button.textContent = '✦ Improve requirement'; }, 650); };
+$('aiImprove').onclick = () => { const button = $('aiImprove'); button.disabled = true; button.textContent = '✦ Reviewing brief…'; $('formProgress').hidden = false; $('formProgress').textContent = 'Checking for testable structure…'; window.setTimeout(() => { $('formProgress').hidden = true; $('aiSuggestion').hidden = false; button.disabled = false; button.textContent = '✦ Review brief'; }, 300); };
 $('dismissAiSuggestion').onclick = () => { $('aiSuggestion').hidden = true; };
 $('applyAiSuggestion').onclick = () => { const area = $('requirement'); area.value = `${area.value.trim()}\n\nAcceptance Criteria:\n- Given a valid user\n- When they complete the requested action\n- Then the expected outcome is recorded\n\nConstraints:\n- Define validation and failure handling`; $('aiSuggestion').hidden = true; updateRequirementCount(); toast('Suggestion structure applied', 'success'); };
 $('themeToggle').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');

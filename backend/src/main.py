@@ -6,12 +6,14 @@ import os
 import re
 import sqlite3
 import uuid
+import logging
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -30,6 +32,7 @@ ASSISTANT_KNOWLEDGE = {
 }
 
 app = FastAPI(title="Automated SDLC-to-QA MVP", version="1.0.0")
+logger = logging.getLogger("flowpilot")
 
 
 class ProjectInput(BaseModel):
@@ -70,8 +73,20 @@ async def api_error(_: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"success": False, "error": detail, "request_id": str(uuid.uuid4())})
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """Keep framework validation details out of the user-facing API contract."""
+    first = exc.errors()[0] if exc.errors() else {}
+    field = ".".join(str(part) for part in first.get("loc", [])[1:])
+    message = first.get("msg", "Check the submitted values and try again.")
+    if field:
+        message = f"{field.replace('_', ' ').capitalize()}: {message}"
+    return JSONResponse(status_code=422, content={"success": False, "error": {"code": "VALIDATION_ERROR", "message": message}, "request_id": str(uuid.uuid4())})
+
+
 @app.exception_handler(Exception)
-async def unexpected_error(_: Request, __: Exception) -> JSONResponse:
+async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled request failure", extra={"path": request.url.path, "method": request.method})
     return JSONResponse(status_code=500, content={"success": False, "error": {"code": "INTERNAL_ERROR", "message": "Unexpected server error"}, "request_id": str(uuid.uuid4())})
 
 

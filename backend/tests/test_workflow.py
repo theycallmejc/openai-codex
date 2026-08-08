@@ -52,6 +52,16 @@ def test_local_login_accepts_demo_account_and_rejects_invalid_credentials(tmp_pa
     assert c.post("/api/auth/login",json={"email":"admin@flowpilot.local","password":"incorrect"}).status_code==401
 
 
+def test_invalid_request_uses_the_application_error_envelope(tmp_path,monkeypatch):
+    c=client(tmp_path,monkeypatch)
+    response=c.post("/api/projects",json={"name":""})
+    payload=response.json()
+    assert response.status_code==422
+    assert payload["success"] is False
+    assert payload["error"]["code"]=="VALIDATION_ERROR"
+    assert isinstance(payload["error"]["message"],str)
+
+
 def test_login_and_workspace_are_served_as_separate_pages(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch)
     assert "Sign in to your workspace" in c.get("/").text
