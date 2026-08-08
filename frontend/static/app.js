@@ -13,6 +13,7 @@ let pendingReview = null;
 let activeWorkspaceId = localStorage.getItem('flowpilot.active-workspace') || '';
 let workspaces = [];
 let editingWorkspaceId = null;
+let requirementIntelligence = null;
 
 const tabs = ['Requirement', 'Analysis', 'BRD', 'Backlog', 'Tests', 'Traceability', 'QA Handoff'];
 const stages = [
@@ -684,9 +685,9 @@ document.querySelectorAll('[data-prompt]').forEach(button => button.onclick = ()
   const templates = {'Users & personas':'Users and personas:\n- Primary user: \n- Secondary user: ','Business rules':'Business rules:\n- ','Acceptance criteria':'Acceptance criteria:\n- Given \n- When \n- Then ','Expected outcome':'Expected outcome:\n- ','Constraints':'Constraints:\n- ','Edge cases':'Edge cases:\n- '};
   const area = $('requirement'); area.value = `${area.value.trim()}${area.value.trim() ? '\n\n' : ''}${templates[button.dataset.prompt]}`; area.focus(); updateRequirementCount();
 });
-$('aiImprove').onclick = () => { const button = $('aiImprove'); button.disabled = true; button.textContent = '✦ Reviewing brief…'; $('formProgress').hidden = false; $('formProgress').textContent = 'Checking for testable structure…'; window.setTimeout(() => { $('formProgress').hidden = true; $('aiSuggestion').hidden = false; button.disabled = false; button.textContent = '✦ Review brief'; }, 300); };
+$('aiImprove').onclick = async () => { const raw = $('requirement').value.trim(); if (raw.length < 8) { $('formError').textContent = 'Add a short requirement before requesting guidance.'; return; } const button = $('aiImprove'); button.disabled = true; button.textContent = '✦ Reviewing brief…'; $('formProgress').hidden = false; $('formProgress').textContent = 'Analyzing requirement readiness…'; try { requirementIntelligence = await api('/api/requirement-intelligence', {raw_requirement:raw}); const missing = requirementIntelligence.dimensions.filter(item => item.status !== 'Good').map(item => item.dimension).join(', ') || 'No major gaps'; $('aiSuggestion').querySelector('p').textContent = `FLOWPILOT GUIDANCE · ${requirementIntelligence.overall.toUpperCase()}`; $('aiSuggestion').querySelector('strong').textContent = missing; $('aiSuggestion').querySelector('span').textContent = requirementIntelligence.questions.map(item => item.question).join(' ') || 'The requirement includes the core readiness signals.'; $('aiSuggestion').hidden = false; } catch (error) { toast(error.message || 'Unable to analyze the requirement.', 'error'); } finally { $('formProgress').hidden = true; button.disabled = false; button.textContent = '✦ Review brief'; } };
 $('dismissAiSuggestion').onclick = () => { $('aiSuggestion').hidden = true; };
-$('applyAiSuggestion').onclick = () => { const area = $('requirement'); area.value = `${area.value.trim()}\n\nAcceptance Criteria:\n- Given a valid user\n- When they complete the requested action\n- Then the expected outcome is recorded\n\nConstraints:\n- Define validation and failure handling`; $('aiSuggestion').hidden = true; updateRequirementCount(); toast('Suggestion structure applied', 'success'); };
+$('applyAiSuggestion').onclick = () => { if (!requirementIntelligence?.proposed_requirement) return; const area = $('requirement'); area.value = `${area.value.trim()}\n\n${requirementIntelligence.proposed_requirement}`; $('aiSuggestion').hidden = true; updateRequirementCount(); toast('Proposed structure added for your review', 'success'); };
 $('themeToggle').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 $('sidebarToggle').onclick = () => { const collapsed = $('sidebar').classList.toggle('collapsed'); localStorage.setItem('flowpilot.sidebar-collapsed', String(collapsed)); $('sidebarToggle').textContent = collapsed ? '›' : '‹'; };
 setTheme(localStorage.getItem('flowpilot.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));

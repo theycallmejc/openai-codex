@@ -17,6 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
+from backend.src.requirement_intelligence import analyze_requirement
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = Path(os.getenv("SDLC_DATABASE_PATH", str(ROOT / "data" / "sdlc-framework.db")))
@@ -59,6 +60,10 @@ class RequirementInput(BaseModel):
     raw_requirement: str = Field(min_length=1, max_length=MAX_REQUIREMENT_LENGTH)
 
 
+class RequirementIntelligenceInput(BaseModel):
+    raw_requirement: str = Field(min_length=8, max_length=MAX_REQUIREMENT_LENGTH)
+
+
 class DecisionInput(BaseModel):
     reviewer: str = Field(min_length=1, max_length=120)
     reason: str = Field(default="", max_length=2000)
@@ -96,7 +101,7 @@ def envelope(data: Any, status: int = 200) -> JSONResponse:
 @app.middleware("http")
 async def security_and_session(request: Request, call_next):
     """Apply a small production-safe baseline while keeping the local MVP usable."""
-    protected = request.url.path.startswith("/api/projects") or request.url.path.startswith("/api/workspaces") or request.url.path in {"/api/assistant", "/api/reviews", "/api/dashboard"}
+    protected = request.url.path.startswith("/api/projects") or request.url.path.startswith("/api/workspaces") or request.url.path in {"/api/assistant", "/api/reviews", "/api/dashboard", "/api/requirement-intelligence"}
     if protected and not request.session.get("user_id"):
         return JSONResponse(status_code=401, content={"success": False, "error": {"code": "AUTHENTICATION_REQUIRED", "message": "Sign in to access the workspace."}, "request_id": str(uuid.uuid4())})
     response = await call_next(request)
@@ -543,6 +548,11 @@ def get_samples() -> JSONResponse:
         raise HTTPException(503, {"code": "SAMPLES_UNAVAILABLE", "message": "Sample scenarios are not installed in this environment."})
     with samples_path.open(encoding="utf-8") as handle:
         return envelope(json.load(handle))
+
+
+@app.post("/api/requirement-intelligence")
+def requirement_intelligence(payload: RequirementIntelligenceInput) -> JSONResponse:
+    return envelope(analyze_requirement(payload.raw_requirement))
 
 
 @app.post("/api/projects/{project_id}/requirements")
