@@ -10,7 +10,7 @@
 <body>
   <div class="app-shell" id="appShell">
     <aside class="sidebar" id="sidebar">
-      <div class="brand"><span aria-hidden="true">✦</span><strong>FlowPilot</strong><b>BETA</b><button id="sidebarToggle" class="icon-button" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button></div>
+      <div class="brand"><span aria-hidden="true">✦</span><strong id="workspaceBrand">FlowPilot</strong><b>BETA</b><button id="sidebarToggle" class="icon-button" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button></div>
       <button class="primary new-workflow" id="navNew">＋ New workflow</button>
       <nav class="app-nav" aria-label="Application">
         <button data-library-view="dashboard">◈ <span>Dashboard</span></button>
@@ -21,7 +21,7 @@
         <button data-library-view="audit">◷ <span>Audit history</span></button>
       </nav>
       <div id="sidebarWorkflows"></div>
-      <div class="sidebar-bottom">
+      <div class="workspace-owner" id="workspaceOwner"><span class="owner-avatar" id="ownerAvatar">FP</span><span><strong id="ownerName">Your workspace</strong><small>Workspace owner</small></span></div><div class="sidebar-bottom">
         <button type="button" id="helpOpen" aria-label="Open help" title="Help">?</button><span>Help</span>
         <button type="button" id="settingsOpen" aria-label="Open settings" title="Settings">⚙</button><span>Settings</span>
       </div>
@@ -92,7 +92,7 @@
   </dialog>
 
   <dialog id="settingsDialog" class="next-dialog" aria-labelledby="settingsDialogTitle">
-    <form id="settingsForm" class="dialog-card"><button type="button" class="dialog-close" data-close-dialog="settingsDialog" aria-label="Close">×</button><p class="eyebrow">PREFERENCES</p><h2 id="settingsDialogTitle">Workspace settings</h2><label>Color theme<select id="settingsTheme"><option value="light">Light</option><option value="dark">Dark</option></select></label><label class="settings-check"><input id="settingsSidebar" type="checkbox"> Start with sidebar collapsed</label><p class="dialog-copy">Preferences are saved only in this browser.</p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog="settingsDialog">Cancel</button><button class="primary" type="submit">Save preferences</button></div></form>
+    <form id="settingsForm" class="dialog-card"><button type="button" class="dialog-close" data-close-dialog="settingsDialog" aria-label="Close">×</button><p class="eyebrow">PREFERENCES</p><h2 id="settingsDialogTitle">Workspace settings</h2><label>Workspace name<input id="settingsWorkspaceName" maxlength="40" placeholder="Your workspace"></label><label>Your display name<input id="settingsOwnerName" maxlength="60" placeholder="Your name"></label><label>Color theme<select id="settingsTheme"><option value="light">Light</option><option value="dark">Dark</option></select></label><label class="settings-check"><input id="settingsSidebar" type="checkbox"> Start with sidebar collapsed</label><p class="dialog-copy">Preferences are saved only in this browser.</p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog="settingsDialog">Cancel</button><button class="primary" type="submit">Save preferences</button></div></form>
   </dialog>
 
   <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="false"><span>✦</span><b>Ask FlowPilot</b></button>

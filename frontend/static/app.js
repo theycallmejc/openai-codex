@@ -101,6 +101,9 @@ function updateRequirementCount() {
   $('qualityTipAction').textContent = acceptance ? 'Add constraints' : 'Add acceptance criteria';
 }
 
+function workspaceIdentity() { return JSON.parse(localStorage.getItem('flowpilot.workspace') || '{}'); }
+function applyWorkspaceIdentity() { const identity = workspaceIdentity(); const owner = identity.owner || $('accountName').textContent || 'Your workspace'; const label = identity.name || 'FlowPilot'; $('workspaceBrand').textContent = label; $('ownerName').textContent = owner; $('ownerAvatar').textContent = owner.split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join('').toUpperCase() || 'FP'; }
+
 function chatReply(question) {
   const q = question.toLowerCase();
   if (/^(hi|hello|hey|good morning|good afternoon)\b/.test(q)) return 'Hi! I’m ready to help you understand the workflow or guide your next action.';
@@ -744,9 +747,10 @@ try {
   if (!user?.name) window.location.replace('/');
   else $('accountName').textContent = user.name;
 } catch (_) { localStorage.removeItem('flowpilot.user'); window.location.replace('/'); }
+applyWorkspaceIdentity();
 $('signOut').onclick = async () => { try { await fetch('/api/auth/logout', {method:'POST'}); } finally { localStorage.removeItem('flowpilot.user'); window.location.assign('/'); } };
 $('helpOpen').onclick = () => $('helpDialog').showModal();
-$('settingsOpen').onclick = () => { $('settingsTheme').value = document.documentElement.dataset.theme || 'light'; $('settingsSidebar').checked = localStorage.getItem('flowpilot.sidebar-collapsed') === 'true'; $('settingsDialog').showModal(); };
+$('settingsOpen').onclick = () => { const identity = workspaceIdentity(); $('settingsWorkspaceName').value = identity.name || 'FlowPilot'; $('settingsOwnerName').value = identity.owner || $('accountName').textContent || ''; $('settingsTheme').value = document.documentElement.dataset.theme || 'light'; $('settingsSidebar').checked = localStorage.getItem('flowpilot.sidebar-collapsed') === 'true'; $('settingsDialog').showModal(); };
 document.querySelectorAll('[data-close-dialog]').forEach(button => button.onclick = () => $(button.dataset.closeDialog).close());
 $('helpStartWorkflow').onclick = () => { $('helpDialog').close(); reset(); };
-$('settingsForm').addEventListener('submit', event => { event.preventDefault(); setTheme($('settingsTheme').value); const shouldCollapse = $('settingsSidebar').checked; const isCollapsed = $('sidebar').classList.contains('collapsed'); if (shouldCollapse !== isCollapsed) $('sidebarToggle').click(); $('settingsDialog').close(); toast('Preferences saved', 'success'); });
+$('settingsForm').addEventListener('submit', event => { event.preventDefault(); setTheme($('settingsTheme').value); localStorage.setItem('flowpilot.workspace', JSON.stringify({name:$('settingsWorkspaceName').value.trim() || 'FlowPilot', owner:$('settingsOwnerName').value.trim() || $('accountName').textContent || 'Your workspace'})); applyWorkspaceIdentity(); const shouldCollapse = $('settingsSidebar').checked; const isCollapsed = $('sidebar').classList.contains('collapsed'); if (shouldCollapse !== isCollapsed) $('sidebarToggle').click(); $('settingsDialog').close(); toast('Preferences saved', 'success'); });
