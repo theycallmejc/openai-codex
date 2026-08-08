@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260808-launch-banner">
+  <link rel="stylesheet" href="/static/styles.css?v=20260808-editor-workspace">
 </head>
 <body>
   <div class="app-shell">
@@ -29,23 +29,17 @@
       <header class="topbar"><span id="crumb">New workflow</span><div class="topbar-actions"><span id="status" hidden></span><button id="themeToggle" class="icon-button" aria-label="Toggle color theme" title="Toggle color theme">◐</button></div></header>
 
       <section id="creationView" class="creation-view">
-        <header class="new-hero launch-banner" id="launchBanner">
-          <div class="banner-copy"><p>FLOWPILOT · GOVERNED DELIVERY</p><h1>From requirement to QA-ready—<br>with every handoff accounted for.</h1><span>Capture the outcome once. FlowPilot builds the analysis, BRD, backlog, tests, and traceability, pausing only when your approval matters.</span><div class="banner-actions"><button type="button" class="primary" id="bannerWrite">Start with a requirement <i>→</i></button><button type="button" class="banner-link" id="bannerSample">Use a sample scenario</button></div></div>
-          <div class="banner-flow" aria-label="Workflow stages"><button type="button" class="banner-dismiss" id="bannerDismiss" aria-label="Dismiss introduction" title="Dismiss introduction">×</button><span class="banner-flow-label">YOUR DELIVERY PATH</span><ol><li><b>01</b><span>Requirement</span></li><li><b>02</b><span>Analysis</span></li><li><b>03</b><span>Review gates</span></li><li><b>04</b><span>QA handoff</span></li></ol><div class="banner-assurance"><b>✓</b><span>Traceable by design</span></div></div>
-        </header>
+        <header class="new-hero launch-banner" id="launchBanner"><div class="banner-copy"><p>WORKFLOW DRAFT · LOCAL</p><h1>Build QA-ready evidence from a requirement.</h1><span>Define the outcome, improve the brief with AI, then move through reviewed delivery stages.</span></div><div class="banner-flow" aria-label="Workflow status"><span class="banner-flow-label">DELIVERY PATH</span><ol><li class="current"><b>01</b><span>Describe</span></li><li><b>02</b><span>Agents</span></li><li><b>03</b><span>Review</span></li><li><b>04</b><span>Generate</span></li></ol></div></header>
         <section class="creation-stepper" aria-label="Workflow setup progress"><div class="setup-step active"><b>01</b><span><strong>Describe</strong><small>Capture the requirement</small></span></div><i></i><div class="setup-step"><b>02</b><span><strong>Configure agents</strong><small>Analysis and QA handoffs</small></span></div><i></i><div class="setup-step"><b>03</b><span><strong>Review gates</strong><small>Human approval controls</small></span></div><i></i><div class="setup-step"><b>04</b><span><strong>Generate</strong><small>QA-ready artifacts</small></span></div></section>
         <div class="creation-grid">
         <form id="workflowForm" class="requirement-form composer motion-surface" data-pointer-glow>
-          <div class="form-head">
-            <div><h2>What are you building?</h2><p>Describe the intended behaviour, rules, and outcome.</p></div>
-            <label>Load sample scenario<select id="sampleRequirement"><option>Loading scenarios...</option></select></label>
-          </div>
-          <div class="field-label-row"><label for="requirement">Requirement description</label><button type="button" id="requirementVoice" class="voice-button" aria-label="Start voice input for requirement" title="Dictate requirement"><span aria-hidden="true">🎙</span><span class="voice-button-label">Dictate</span></button></div>
-          <textarea id="requirement" required placeholder="Describe the feature, its users, business rules, and expected outcome."></textarea>
+          <div class="form-head"><div><p class="editor-eyebrow">REQUIREMENT</p><h2>Describe the outcome</h2><p>Users, rules, constraints, acceptance criteria, and expected result.</p></div><div class="editor-tools"><label>Load sample<select id="sampleRequirement"><option>Loading scenarios...</option></select></label><button type="button" id="requirementVoice" class="voice-button" aria-label="Start voice input for requirement">🎙 Dictate</button><button type="button" id="aiImprove" class="ai-assist">✦ Improve requirement</button></div></div>
+          <div class="field-label-row"><label for="requirement">Requirement brief</label><span>Markdown-friendly</span></div>
+          <textarea id="requirement" required placeholder="Describe the feature, users, rules, constraints, acceptance criteria, and expected outcome..."></textarea>
           <div id="requirementVoiceStatus" class="voice-status" role="status" aria-live="polite" hidden></div>
           <div class="input-meta"><span>Include users, rules, and the expected result for the strongest handoff.</span><strong id="requirementCount">0 / 10,000</strong></div>
           <div class="prompt-chips" aria-label="Requirement templates"><button type="button" data-prompt="Users & personas">Users & personas</button><button type="button" data-prompt="Business rules">Business rules</button><button type="button" data-prompt="Acceptance criteria">Acceptance criteria</button><button type="button" data-prompt="Expected outcome">Expected outcome</button><button type="button" data-prompt="Constraints">Constraints</button><button type="button" data-prompt="Edge cases">Edge cases</button></div>
-          <button type="button" id="aiImprove" class="ai-assist">✦ Improve with FlowPilot AI</button><section id="aiSuggestion" class="ai-suggestion" hidden><div><p>FLOWPILOT SUGGESTS</p><strong>Make the requirement easier to test</strong><span>Add actors, a failure path, acceptance criteria, and validation constraints.</span></div><div><button type="button" id="applyAiSuggestion" class="secondary">Apply structure</button><button type="button" id="dismissAiSuggestion" class="icon-button" aria-label="Dismiss suggestion">×</button></div></section>
+          <section id="aiSuggestion" class="ai-suggestion" hidden><div><p>FLOWPILOT AI · 3 IMPROVEMENTS FOUND</p><strong>Make this requirement easier to test</strong><span>Add actors, failure behavior, acceptance criteria, and validation constraints.</span></div><div><button type="button" id="applyAiSuggestion" class="primary">Apply all</button><button type="button" id="dismissAiSuggestion" class="icon-button" aria-label="Dismiss suggestion">×</button></div></section>
           <div id="formProgress" class="form-progress" role="status" aria-live="polite" hidden></div>
           <div class="form-foot">
             <span id="formHint">Your requirement becomes the first saved workflow artifact.</span>
@@ -53,7 +47,7 @@
           </div>
           <p id="formError" role="alert"></p>
         </form>
-        <aside class="intelligence-rail"><section><p>REQUIREMENT QUALITY <small>Heuristic</small></p><h2>Ready to strengthen</h2><div class="quality-list"><span>Clarity <b id="qualityClarity">Needs input</b></span><span>Business rules <b id="qualityRules">Missing</b></span><span>Acceptance criteria <b id="qualityAcceptance">Missing</b></span><span>Constraints <b id="qualityConstraints">Missing</b></span></div></section><section><p>AT A GLANCE</p><div class="at-glance"><span><b>6</b>Agents configured</span><span><b>2</b>Approval gates</span><span><b>—</b>Last run</span><span><b>Local</b>Execution mode</span></div></section><section class="tip-panel"><p>PRO TIP</p><strong>Requirements with users, rules, acceptance criteria, and constraints produce stronger QA artifacts.</strong></section></aside>
+        <aside class="intelligence-rail"><section class="quality-inspector"><p>REQUIREMENT QUALITY <small>Live</small></p><div class="quality-score"><b id="qualityScore">0</b><span>/ 100</span></div><div class="quality-meter"><i id="qualityMeter"></i></div><div class="quality-list"><button type="button" data-quality-action="Users & personas">Clarity <b id="qualityClarity">Needs input</b></button><button type="button" data-quality-action="Business rules">Business rules <b id="qualityRules">Missing</b></button><button type="button" data-quality-action="Acceptance criteria">Acceptance criteria <b id="qualityAcceptance">Missing</b></button><button type="button" data-quality-action="Constraints">Constraints <b id="qualityConstraints">Missing</b></button></div></section><section><p>WORKFLOW CONTEXT</p><div class="at-glance"><button type="button" data-context-action="agents"><b>6</b>Agents configured</button><button type="button" data-context-action="review"><b>2</b>Review gates required</button><span><b>Not run</b>Last execution</span><span><b>Local</b>Execution mode</span></div></section><section class="tip-panel"><p>NEXT BEST ACTION</p><strong id="qualityTip">Add users, rules, and an expected outcome to strengthen the brief.</strong><button type="button" class="banner-link" id="qualityTipAction">Add acceptance criteria</button></section></aside>
         </div>
       </section>
 
@@ -93,6 +87,6 @@
   </section>
 
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=20260808-launch-banner"></script>
+  <script src="/static/app.js?v=20260808-editor-workspace"></script>
 </body>
 </html>

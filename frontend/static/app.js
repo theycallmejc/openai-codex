@@ -83,10 +83,19 @@ function setTheme(theme) {
 function updateRequirementCount() {
   $('requirementCount').textContent = `${$('requirement').value.length.toLocaleString()} / 10,000`;
   const text = $('requirement').value.toLowerCase();
-  $('qualityClarity').textContent = text.length > 80 ? 'Good' : 'Needs detail';
+  const clarity = text.length > 160 ? 30 : text.length > 80 ? 22 : text.length > 20 ? 12 : 0;
+  const rules = /rule|must|only|cannot/.test(text) ? 25 : 0;
+  const acceptance = /given|when|then|acceptance/.test(text) ? 25 : 0;
+  const constraints = /constraint|limit|within|permission|secure/.test(text) ? 20 : 0;
+  const score = clarity + rules + acceptance + constraints;
+  $('qualityScore').textContent = score;
+  $('qualityMeter').style.width = `${score}%`;
+  $('qualityClarity').textContent = clarity >= 22 ? 'Strong' : 'Needs detail';
   $('qualityRules').textContent = /rule|must|only|cannot/.test(text) ? 'Present' : 'Missing';
-  $('qualityAcceptance').textContent = /given|when|then|acceptance/.test(text) ? 'Present' : 'Partial';
+  $('qualityAcceptance').textContent = /given|when|then|acceptance/.test(text) ? 'Good' : 'Missing';
   $('qualityConstraints').textContent = /constraint|limit|within|permission|secure/.test(text) ? 'Present' : 'Missing';
+  $('qualityTip').textContent = acceptance ? (constraints ? 'Your brief is ready to be reviewed before agent handoff.' : 'Add validation constraints to make the generated tests more reliable.') : 'Acceptance criteria are missing. Add a success and failure path before continuing.';
+  $('qualityTipAction').textContent = acceptance ? 'Add constraints' : 'Add acceptance criteria';
 }
 
 function chatReply(question) {
@@ -636,7 +645,7 @@ document.querySelectorAll('[data-prompt]').forEach(button => button.onclick = ()
   const templates = {'Users & personas':'Users and personas:\n- Primary user: \n- Secondary user: ','Business rules':'Business rules:\n- ','Acceptance criteria':'Acceptance criteria:\n- Given \n- When \n- Then ','Expected outcome':'Expected outcome:\n- ','Constraints':'Constraints:\n- ','Edge cases':'Edge cases:\n- '};
   const area = $('requirement'); area.value = `${area.value.trim()}${area.value.trim() ? '\n\n' : ''}${templates[button.dataset.prompt]}`; area.focus(); updateRequirementCount();
 });
-$('aiImprove').onclick = () => { $('aiSuggestion').hidden = false; };
+$('aiImprove').onclick = () => { const button = $('aiImprove'); button.disabled = true; button.textContent = '✦ Analyzing requirement…'; $('formProgress').hidden = false; $('formProgress').textContent = 'Finding missing constraints and acceptance criteria…'; window.setTimeout(() => { $('formProgress').hidden = true; $('aiSuggestion').hidden = false; button.disabled = false; button.textContent = '✦ Improve requirement'; }, 650); };
 $('dismissAiSuggestion').onclick = () => { $('aiSuggestion').hidden = true; };
 $('applyAiSuggestion').onclick = () => { const area = $('requirement'); area.value = `${area.value.trim()}\n\nAcceptance Criteria:\n- Given a valid user\n- When they complete the requested action\n- Then the expected outcome is recorded\n\nConstraints:\n- Define validation and failure handling`; $('aiSuggestion').hidden = true; updateRequirementCount(); toast('Suggestion structure applied', 'success'); };
 $('themeToggle').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
@@ -645,10 +654,9 @@ setTheme(localStorage.getItem('flowpilot.theme') || (matchMedia('(prefers-color-
 if (localStorage.getItem('flowpilot.sidebar-collapsed') === 'true') $('sidebarToggle').click();
 $('navNew').onclick = () => reset();
 document.querySelectorAll('[data-library-view]').forEach(button => button.onclick = () => showLibrary(button.dataset.libraryView));
-$('bannerWrite').onclick = () => { $('requirement').focus(); $('requirement').scrollIntoView({behavior:'smooth', block:'center'}); };
-$('bannerSample').onclick = () => { $('sampleRequirement').focus(); $('sampleRequirement').scrollIntoView({behavior:'smooth', block:'center'}); };
-$('bannerDismiss').onclick = () => { $('launchBanner').hidden = true; localStorage.setItem('flowpilot.banner-dismissed', 'true'); };
-if (localStorage.getItem('flowpilot.banner-dismissed') === 'true') $('launchBanner').hidden = true;
+document.querySelectorAll('[data-quality-action]').forEach(button => button.onclick = () => document.querySelector(`[data-prompt="${button.dataset.qualityAction}"]`).click());
+$('qualityTipAction').onclick = () => document.querySelector(`[data-prompt="${$('qualityTipAction').textContent === 'Add constraints' ? 'Constraints' : 'Acceptance criteria'}"]`).click();
+document.querySelectorAll('[data-context-action]').forEach(button => button.onclick = () => toast(button.dataset.contextAction === 'agents' ? 'Agents are configured for the next workflow stage.' : 'Two human approval gates protect BRD and backlog handoffs.'));
 $('requirement').addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') $('workflowForm').requestSubmit(); });
 $('startNextScenario').onclick = () => {
   const selected = samples[$('nextScenarioSelect').value];
