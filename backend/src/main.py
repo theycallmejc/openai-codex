@@ -247,8 +247,28 @@ def create_project(payload: ProjectInput) -> JSONResponse:
 @app.get("/api/projects")
 def list_projects() -> JSONResponse:
     with db() as c:
-        rows = c.execute("SELECT public_id,name,description,state,created_at FROM projects ORDER BY id DESC").fetchall()
+        rows = c.execute("""
+            SELECT p.public_id,p.name,p.description,p.state,p.created_at,
+              COALESCE((SELECT MAX(timestamp) FROM workflow_audit_events WHERE project_id=p.id), p.created_at) AS updated_at,
+              (SELECT COUNT(*) FROM agent_runs WHERE project_id=p.id) AS agent_run_count
+            FROM projects p ORDER BY updated_at DESC, p.id DESC
+        """).fetchall()
         return envelope([dict(row) for row in rows])
+
+
+@app.get("/api/workspace/overview")
+def workspace_overview() -> JSONResponse:
+    with db() as c:
+        row = c.execute("""
+            SELECT
+              COUNT(*) AS total_workflows,
+              SUM(CASE WHEN state = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_workflows,
+              SUM(CASE WHEN state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL') THEN 1 ELSE 0 END) AS awaiting_review,
+              SUM(CASE WHEN state NOT IN ('DRAFT','COMPLETED','FAILED') THEN 1 ELSE 0 END) AS active_workflows,
+              (SELECT COUNT(*) FROM agent_runs WHERE status = 'completed') AS completed_agent_runs
+            FROM projects
+        """).fetchone()
+        return envelope({key: int(value or 0) for key, value in dict(row).items()})
 
 
 @app.get("/api/projects/{project_id}")

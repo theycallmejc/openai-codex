@@ -38,6 +38,10 @@ def test_projects_library_lists_created_workflows(tmp_path,monkeypatch):
     response=c.get("/api/projects")
     assert response.status_code==200
     assert response.json()["data"][0]["public_id"]==p
+    assert response.json()["data"][0]["updated_at"]
+    overview=c.get("/api/workspace/overview").json()["data"]
+    assert overview["total_workflows"]==1
+    assert overview["active_workflows"]==0
 
 
 def test_project_assistant_returns_contextual_workflow_guidance(tmp_path,monkeypatch):
