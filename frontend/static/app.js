@@ -415,6 +415,43 @@ function actionControl(vm) {
   return `<button class="primary" data-run="${n.path}">${n.label} <i>→</i></button>`;
 }
 
+function elapsed(run) {
+  if (!run?.started_at) return 'Not started';
+  if (!run.completed_at) return 'Running now';
+  const seconds = Math.max(0, Math.round((new Date(run.completed_at) - new Date(run.started_at)) / 1000));
+  return seconds < 1 ? 'Completed in under 1s' : `Completed in ${seconds}s`;
+}
+
+function executionTimeline(vm) {
+  const standard = project.agent_runs || [];
+  const orchestration = project.orchestration_runs || [];
+  const latest = (runs, agent) => runs.find(run => run.agent === agent);
+  const analysis = latest(standard.slice().reverse(), 'analysis');
+  const risk = latest(orchestration, 'risk');
+  const tests = latest(standard.slice().reverse(), 'tests');
+  const review = latest(orchestration, 'review');
+  const artifact = latest(standard.slice().reverse(), 'qa_handoff');
+  const approvalState = project.state.includes('AWAITING_APPROVAL') ? 'review' : (['BRD_APPROVED', 'BACKLOG_APPROVED', 'COMPLETED'].includes(project.state) ? 'completed' : 'waiting');
+  const stateFor = (run, fallback = 'waiting') => run?.status === 'completed' ? 'completed' : run?.status === 'running' ? 'running' : run?.status === 'failed' ? 'failed' : fallback;
+  const resultSummary = run => {
+    if (!run) return 'Waiting for its workflow dependency.';
+    if (run.error) return run.error;
+    if (run.result?.risks?.length) return `${run.result.risks.length} recorded risk finding${run.result.risks.length === 1 ? '' : 's'}.`;
+    if (run.result?.findings?.length) return `${run.result.findings.length} readiness gap${run.result.findings.length === 1 ? '' : 's'} need review.`;
+    return run.output_artifact ? `Produced ${run.output_artifact}.` : 'Completed output recorded.';
+  };
+  const nodes = [
+    {id:'requirement', title:'Requirement', role:'Captured workflow input', state:project.state === 'DRAFT' ? 'waiting' : 'completed', activity:project.state === 'DRAFT' ? 'Waiting for a requirement' : 'Requirement saved', summary:project.description || 'Workflow requirement'},
+    {id:'analysis', title:'Requirements Agent', role:'Structures the captured requirement', state:stateFor(analysis, project.state === 'FAILED' ? 'failed' : 'waiting'), activity:analysis?.status === 'running' ? 'Analyzing requirement structure' : 'Maps requirement statements', summary:resultSummary(analysis), run:analysis},
+    {id:'risk', title:'Risk Agent', role:'Finds risk and edge-case signals', state:stateFor(risk), activity:risk?.status === 'running' ? 'Reviewing risk signals' : 'Checks edge cases', summary:resultSummary(risk), run:risk},
+    {id:'qa', title:'QA Agent', role:'Generates test scenarios', state:stateFor(tests), activity:tests?.status === 'running' ? 'Generating test scenarios' : 'Maps acceptance criteria to tests', summary:resultSummary(tests), run:tests},
+    {id:'review', title:'Review Agent', role:'Assesses requirement readiness', state:stateFor(review), activity:review?.status === 'running' ? 'Reviewing workflow readiness' : 'Prepares findings for human review', summary:resultSummary(review), run:review},
+    {id:'approval', title:'Human approval', role:'Required governance decision', state:approvalState, activity:approvalState === 'review' ? 'Approval required' : approvalState === 'completed' ? 'Approval recorded' : 'Waiting for review stage', summary:approvalState === 'review' ? vm.nextAction.detail : 'No approval is currently pending.'},
+    {id:'artifact', title:'QA-ready artifact', role:'Traceable QA handoff', state:stateFor(artifact, project.state === 'COMPLETED' ? 'completed' : 'waiting'), activity:artifact?.status === 'running' ? 'Preparing QA handoff' : project.state === 'COMPLETED' ? 'Artifact ready' : 'Waiting for validated traceability', summary:resultSummary(artifact), run:artifact}
+  ];
+  return `<section class="audit execution-timeline"><div class="execution-head"><div><p>WORKFLOW EXECUTION</p><h2>Delivery timeline</h2><span>Each status is derived from persisted workflow and agent records.</span></div>${project.state === 'FAILED' ? '<button class="secondary" data-retry-workflow>Retry from requirement</button>' : ''}</div><div class="timeline-list">${nodes.map((node, index) => `<article class="timeline-node ${node.state}"><i class="timeline-connector ${index === nodes.length - 1 ? 'last' : ''}"></i><b>${node.state === 'completed' ? '✓' : node.state === 'running' ? '●' : node.state === 'failed' ? '!' : node.state === 'review' ? '◇' : '○'}</b><div class="timeline-copy"><div><strong>${esc(node.title)}</strong><em>${esc(node.state === 'review' ? 'Needs review' : node.state)}</em></div><span>${esc(node.role)} · ${esc(node.activity)}</span><small>${esc(node.summary)} ${node.run ? `· ${esc(elapsed(node.run))}` : ''}</small>${node.run ? `<details><summary>View recorded output</summary><p>Input: ${esc(node.run.input_artifact || 'Requirement context')}<br>Output: ${esc(node.run.output_artifact || node.run.result ? 'Stored agent result' : 'No output recorded')}</p></details>` : ''}</div></article>`).join('')}</div></section>`;
+}
+
 function activitySummary() {
   const runs = (project.agent_runs || []).slice().reverse();
   if (!runs.length) return '';
@@ -542,6 +579,7 @@ function render() {
 
     <div class="workspace-layout">
       <section class="workspace-main">
+        ${executionTimeline(vm)}
         <section class="audit orchestration-panel"><div class="orchestration-head"><div><p>FLOWPILOT ORCHESTRATION</p><h2>Agent plan</h2></div><div class="orchestration-actions"><button class="secondary" data-load-plan>Refresh</button><button class="primary" data-run-all-agents>Run agent workflow</button></div></div><div id="orchestrationPlan" class="empty-copy">Loading the specialized agent workflow…</div></section>
         <nav class="artifact-tabs" aria-label="Artifacts">${tabs.map(x => `<button data-artifact="${x}" class="${view === x ? 'selected' : ''}" ${vm.available[x] ? '' : 'disabled'}>${x}</button>`).join('')}</nav>
         <article class="artifact-view">${artifact(vm)}</article>
@@ -588,6 +626,7 @@ function bindWorkspace(vm) {
   document.querySelectorAll('[data-next]').forEach(button => button.onclick = () => vm.nextAction.path ? run(vm.nextAction.path) : render());
   document.querySelectorAll('[data-reset]').forEach(button => button.onclick = reset);
   document.querySelectorAll('[data-next-scenario]').forEach(button => button.onclick = openNextScenario);
+  document.querySelectorAll('[data-retry-workflow]').forEach(button => button.onclick = () => run('retry'));
   $('commentForm')?.addEventListener('submit', async event => { event.preventDefault(); try { await api(`/api/projects/${project.public_id}/comments`, {artifact_type:view.toLowerCase().replace(' ', '_'), author:$('commentAuthor').value.trim(), body:$('commentBody').value.trim()}); project = await api(`/api/projects/${project.public_id}`); render(); toast('Comment added', 'success'); } catch (error) { toast(error.message || 'Unable to add comment.', 'error'); } });
   $('assignmentForm')?.addEventListener('submit', async event => { event.preventDefault(); const artifactType = project.state === 'BRD_AWAITING_APPROVAL' ? 'brd' : 'backlog'; try { await api(`/api/projects/${project.public_id}/review-assignment`, {artifact_type:artifactType, reviewer:$('assignmentReviewer').value.trim()}); project = await api(`/api/projects/${project.public_id}`); render(); toast('Reviewer assigned', 'success'); } catch (error) { toast(error.message || 'Unable to save assignment.', 'error'); } });
   document.querySelector('[data-load-plan]')?.addEventListener('click', loadOrchestrationPlan);

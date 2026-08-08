@@ -710,6 +710,19 @@ def automation_run_next(project_id: str) -> JSONResponse:
     return handlers[agent](project_id)
 
 
+@app.post("/api/projects/{project_id}/retry")
+def retry_failed_workflow(project_id: str) -> JSONResponse:
+    """Recover a failed workflow at the safe, persisted requirement boundary."""
+    with db() as c:
+        project = project_row(c, project_id)
+        require_state(project, {"FAILED"}, ["retry_failed_workflow"])
+        requirement = c.execute("SELECT 1 FROM requirements WHERE project_id=?", (project["id"],)).fetchone()
+        if not requirement:
+            raise HTTPException(409, {"code":"REQUIREMENT_REQUIRED", "message":"A saved requirement is needed before retrying."})
+        project = transition(c, project, "REQUIREMENT_CAPTURED", "workflow_retry", reason="Retry requested from failed workflow")
+        return envelope({"state": project["state"], "next_action": "generate_analysis"})
+
+
 @app.post("/api/projects/{project_id}/analysis/generate")
 def analysis_generate(project_id: str) -> JSONResponse:
     with db() as c:

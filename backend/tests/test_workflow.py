@@ -120,3 +120,11 @@ def test_project_payload_includes_persisted_agent_findings_for_dashboard(tmp_pat
     payload = c.get(f"/api/projects/{p}").json()["data"]
     assert {run["agent"] for run in payload["orchestration_runs"]} == {"requirement", "risk", "review"}
     assert payload["orchestration_runs"][0]["result"] is not None
+
+
+def test_retry_is_guarded_until_a_workflow_has_failed(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch); p = create(c)
+    c.post(f"/api/projects/{p}/requirements", json={"raw_requirement":"Users can save a shopping list."})
+    retry = c.post(f"/api/projects/{p}/retry")
+    assert retry.status_code == 409
+    assert retry.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
