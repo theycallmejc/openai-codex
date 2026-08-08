@@ -545,7 +545,7 @@ async function showLibrary(screen = 'workflows') {
   setActiveNavigation(screen);
   $('creationView').hidden = true; $('workspaceView').hidden = true; $('libraryView').hidden = false;
   $('crumb').textContent = screen === 'workflows' ? 'Workflow library' : stateLabel(screen);
-  $('libraryView').innerHTML = `<div class="library-loading">Loading ${esc(screen)}…</div>`;
+  $('libraryView').innerHTML = `<div class="library-loading" role="status" aria-live="polite" aria-busy="true"><span>Loading ${esc(screen)}…</span><i></i><i></i><i></i></div>`;
   try {
     const [summaries, overview, reviews, dashboard] = await Promise.all([api('/api/projects'), api('/api/workspace/overview'), api('/api/reviews'), api('/api/dashboard')]);
     const projects = await Promise.all(summaries.map(async item => ({...(await api(`/api/projects/${item.public_id}`)), updated_at:item.updated_at, agent_run_count:item.agent_run_count})));
