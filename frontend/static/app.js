@@ -797,6 +797,55 @@ api('/api/samples').then(data => {
   };
 }).catch(error => $('formError').textContent = error.message);
 
+function setAnalysisStages(active, complete = false) {
+  const stages = $('analysisStages');
+  if (!stages) return;
+  stages.hidden = false;
+  stages.querySelectorAll('li').forEach((item, index) => {
+    item.classList.toggle('active', !complete && index === active);
+    item.classList.toggle('complete', complete || index < active);
+  });
+}
+
+function autoGrowRequirement() {
+  const area = $('requirement');
+  area.style.height = 'auto';
+  area.style.height = `${Math.max(220, Math.min(area.scrollHeight, 520))}px`;
+}
+
+$('requirement').addEventListener('input', autoGrowRequirement);
+autoGrowRequirement();
+
+$('aiImprove').onclick = async () => {
+  const raw = $('requirement').value.trim();
+  if (raw.length < 8) { $('formError').textContent = 'Add a short requirement before requesting guidance.'; $('requirement').focus(); return; }
+  const button = $('aiImprove');
+  button.disabled = true; button.textContent = 'Reviewing requirement…';
+  $('formProgress').hidden = false; $('formProgress').textContent = 'FlowPilot is checking the requirement structure.';
+  setAnalysisStages(0);
+  try {
+    requirementIntelligence = await api('/api/requirement-intelligence', {raw_requirement:raw});
+    setAnalysisStages(4, true);
+    const missing = requirementIntelligence.dimensions.filter(item => item.status !== 'Good').map(item => item.dimension);
+    $('aiSuggestion').querySelector('p').textContent = `FLOWPILOT SUGGESTION · ${requirementIntelligence.overall.toUpperCase()}`;
+    $('aiSuggestion').querySelector('strong').textContent = missing.length ? `Add detail for: ${missing.join(', ')}` : 'The requirement has strong coverage.';
+    $('aiSuggestion').querySelector('span').textContent = requirementIntelligence.questions.map(item => item.question).join(' ') || 'Review the proposed wording before applying it.';
+    $('aiSuggestion').hidden = false;
+  } catch (error) { toast(error.message || 'Unable to analyze the requirement.', 'error'); }
+  finally { $('formProgress').hidden = true; button.disabled = false; button.textContent = '✦ Improve requirement'; }
+};
+
+function openCommandPalette() { $('commandDialog').showModal(); $('commandSearch').value = ''; $('commandSearch').focus(); document.querySelectorAll('[data-command]').forEach(button => button.hidden = false); }
+function runCommand(command) {
+  $('commandDialog').close();
+  if (command === 'improve') { if (!$('creationView').hidden) $('aiImprove').click(); else { reset(); $('requirement').focus(); toast('Add a requirement, then choose Improve requirement.', 'info'); } }
+  if (command === 'coverage') { toggleChat(true); askChat('Show my current coverage'); }
+  if (command === 'workflow') { toggleChat(true); askChat('Explain this workflow'); }
+}
+$('commandSearch').addEventListener('input', event => { const query = event.target.value.toLowerCase(); document.querySelectorAll('[data-command]').forEach(button => { button.hidden = !button.textContent.toLowerCase().includes(query); }); });
+document.querySelectorAll('[data-command]').forEach(button => button.onclick = () => runCommand(button.dataset.command));
+document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); event.stopImmediatePropagation(); openCommandPalette(); } }, true);
+
 initPointerGlow();
 
 try {

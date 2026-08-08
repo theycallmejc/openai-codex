@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260808-local-login">
+  <link rel="stylesheet" href="/static/styles.css?v=20260809-ai-native">
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -37,12 +37,12 @@
         <form id="workflowForm" class="requirement-form composer motion-surface" data-pointer-glow>
           <div class="form-head"><div><p class="editor-eyebrow">REQUIREMENT</p><h2>Describe the outcome</h2><p>Users, rules, constraints, acceptance criteria, and expected result.</p></div><div class="editor-tools"><label>Load sample<select id="sampleRequirement"><option>Loading scenarios...</option></select></label><button type="button" id="requirementVoice" class="voice-button" aria-label="Start voice input for requirement">🎙 Dictate</button><button type="button" id="aiImprove" class="ai-assist">✦ Improve requirement</button></div></div>
           <div class="field-label-row"><label for="requirement">Requirement brief</label><span>Markdown-friendly</span></div>
-          <textarea id="requirement" required placeholder="Describe the feature, users, rules, constraints, acceptance criteria, and expected outcome..."></textarea>
+          <textarea id="requirement" required placeholder="What are you building? Describe the users, rules, acceptance criteria, edge cases, and expected outcome..."></textarea>
           <div id="requirementVoiceStatus" class="voice-status" role="status" aria-live="polite" hidden></div>
           <div class="input-meta"><span>Include users, rules, and the expected result for the strongest handoff.</span><strong id="requirementCount">0 / 10,000</strong></div>
           <div class="prompt-chips" aria-label="Requirement templates"><button type="button" data-prompt="Users & personas">Users & personas</button><button type="button" data-prompt="Business rules">Business rules</button><button type="button" data-prompt="Acceptance criteria">Acceptance criteria</button><button type="button" data-prompt="Expected outcome">Expected outcome</button><button type="button" data-prompt="Constraints">Constraints</button><button type="button" data-prompt="Edge cases">Edge cases</button></div>
           <section id="aiSuggestion" class="ai-suggestion" hidden><div><p>FLOWPILOT AI · 3 IMPROVEMENTS FOUND</p><strong>Make this requirement easier to test</strong><span>Add actors, failure behavior, acceptance criteria, and validation constraints.</span></div><div><button type="button" id="applyAiSuggestion" class="primary">Apply all</button><button type="button" id="dismissAiSuggestion" class="icon-button" aria-label="Dismiss suggestion">×</button></div></section>
-          <div id="formProgress" class="form-progress" role="status" aria-live="polite" hidden></div>
+          <div id="formProgress" class="form-progress" role="status" aria-live="polite" hidden></div><ol id="analysisStages" class="analysis-stages" hidden><li data-stage="users">Identifying users and outcomes</li><li data-stage="rules">Checking business rules</li><li data-stage="acceptance">Reviewing acceptance criteria</li><li data-stage="edge">Looking for edge cases</li></ol>
           <div class="form-foot">
             <span id="formHint">Your requirement becomes the first saved workflow artifact.</span>
             <div><button type="button" id="clearForm" class="secondary">Clear</button><button id="createWorkflow" class="primary" type="submit">Create workflow <i>→</i></button></div>
@@ -110,7 +110,8 @@
     <div id="chatVoiceStatus" class="voice-status chat-voice-status" role="status" aria-live="polite" hidden></div>
   </section>
 
+  <dialog id="commandDialog" class="next-dialog command-dialog" aria-labelledby="commandDialogTitle"><section class="dialog-card"><button type="button" class="dialog-close" data-close-dialog="commandDialog" aria-label="Close">×</button><p class="eyebrow">FLOWPILOT COMMANDS</p><h2 id="commandDialogTitle">How can FlowPilot help?</h2><input id="commandSearch" type="search" placeholder="Search commands" autocomplete="off"><div id="commandList" class="command-list"><button data-command="improve"><span>Improve requirement</span><small>Find missing details in the current brief</small></button><button data-command="coverage"><span>Review coverage</span><small>Explain current requirement and test coverage</small></button><button data-command="workflow"><span>Explain workflow</span><small>Open a contextual guide to the delivery stages</small></button></div></section></dialog>
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=20260808-workspace-route"></script>
+  <script src="/static/app.js?v=20260809-ai-native"></script>
 </body>
 </html>
