@@ -64,6 +64,11 @@ class ReviewCommentInput(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
 
 
+class ReviewAssignmentInput(BaseModel):
+    artifact_type: str = Field(pattern="^(brd|backlog)$")
+    reviewer: str = Field(min_length=1, max_length=120)
+
+
 class AssistantInput(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     conversation_id: str | None = Field(default=None, max_length=64)
@@ -85,7 +90,7 @@ def envelope(data: Any, status: int = 200) -> JSONResponse:
 @app.middleware("http")
 async def security_and_session(request: Request, call_next):
     """Apply a small production-safe baseline while keeping the local MVP usable."""
-    protected = request.url.path.startswith("/api/projects") or request.url.path in {"/api/assistant", "/api/reviews"}
+    protected = request.url.path.startswith("/api/projects") or request.url.path in {"/api/assistant", "/api/reviews", "/api/dashboard"}
     if protected and not request.session.get("user_id"):
         return JSONResponse(status_code=401, content={"success": False, "error": {"code": "AUTHENTICATION_REQUIRED", "message": "Sign in to access the workspace."}, "request_id": str(uuid.uuid4())})
     response = await call_next(request)
@@ -155,6 +160,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS assistant_conversations (id TEXT PRIMARY KEY, project_id INTEGER, title TEXT, created_at TEXT, updated_at TEXT);
         CREATE TABLE IF NOT EXISTS assistant_messages (id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT, created_at TEXT, FOREIGN KEY(conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS review_comments (id TEXT PRIMARY KEY, project_id INTEGER, artifact_type TEXT, author TEXT, body TEXT, created_at TEXT, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+        CREATE TABLE IF NOT EXISTS review_assignments (project_id INTEGER, artifact_type TEXT, reviewer TEXT, assigned_at TEXT, PRIMARY KEY(project_id, artifact_type), FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
         CREATE INDEX IF NOT EXISTS idx_assistant_messages_conversation ON assistant_messages(conversation_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_review_comments_project ON review_comments(project_id, created_at);
         """)
@@ -263,11 +269,12 @@ def project_payload(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, An
     history = c.execute("SELECT artifact_type,version,workflow_stage,approval_state,created_at FROM artifact_revisions WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
     runs = c.execute("SELECT run_id,agent,status,input_artifact,output_artifact,started_at,completed_at,error FROM agent_runs WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
     comments = c.execute("SELECT id,artifact_type,author,body,created_at FROM review_comments WHERE project_id=? ORDER BY created_at", (project["id"],)).fetchall()
+    assignments = c.execute("SELECT artifact_type,reviewer,assigned_at FROM review_assignments WHERE project_id=?", (project["id"],)).fetchall()
     artifacts = {}
     for key in keys:
         content, row = latest_revision(c, project, key)
         artifacts[key] = {**content, "version":row["version"], "created_at":row["created_at"], "approval_state":row["approval_state"]} if row else artifact(c, project["id"], key)
-    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "agent_runs":[dict(x) for x in runs], "comments":[dict(x) for x in comments], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
+    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "agent_runs":[dict(x) for x in runs], "comments":[dict(x) for x in comments], "review_assignments":[dict(x) for x in assignments], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
 
 
 @app.get("/")
@@ -354,8 +361,24 @@ def get_project(project_id: str) -> JSONResponse:
 @app.get("/api/reviews")
 def review_inbox() -> JSONResponse:
     with db() as c:
-        rows = c.execute("SELECT public_id,name,state,created_at FROM projects WHERE state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL') ORDER BY created_at").fetchall()
+        rows = c.execute("SELECT p.public_id,p.name,p.state,p.created_at,a.reviewer,a.assigned_at FROM projects p LEFT JOIN review_assignments a ON a.project_id=p.id AND a.artifact_type=CASE WHEN p.state='BRD_AWAITING_APPROVAL' THEN 'brd' ELSE 'backlog' END WHERE p.state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL') ORDER BY p.created_at").fetchall()
         return envelope([{**dict(row), "artifact_type": "brd" if row["state"] == "BRD_AWAITING_APPROVAL" else "backlog"} for row in rows])
+
+
+@app.get("/api/dashboard")
+def dashboard() -> JSONResponse:
+    with db() as c:
+        counts = c.execute("SELECT COUNT(*) total, SUM(state='COMPLETED') completed, SUM(state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL')) awaiting_review, SUM(state NOT IN ('DRAFT','COMPLETED','FAILED')) active FROM projects").fetchone()
+        recent = c.execute("SELECT public_id,name,state,created_at FROM projects ORDER BY created_at DESC LIMIT 5").fetchall()
+        return envelope({"metrics": {key: int(value or 0) for key, value in dict(counts).items()}, "recent": [dict(row) for row in recent]})
+
+
+@app.post("/api/projects/{project_id}/review-assignment")
+def assign_reviewer(project_id: str, payload: ReviewAssignmentInput) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        c.execute("INSERT INTO review_assignments(project_id,artifact_type,reviewer,assigned_at) VALUES(?,?,?,?) ON CONFLICT(project_id,artifact_type) DO UPDATE SET reviewer=excluded.reviewer,assigned_at=excluded.assigned_at", (project["id"], payload.artifact_type, payload.reviewer.strip(), now()))
+        return envelope({"artifact_type": payload.artifact_type, "reviewer": payload.reviewer.strip()})
 
 
 @app.post("/api/projects/{project_id}/comments")

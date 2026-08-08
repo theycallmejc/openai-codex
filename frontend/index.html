@@ -13,6 +13,7 @@
       <div class="brand"><span aria-hidden="true">✦</span><strong>FlowPilot</strong><b>BETA</b><button id="sidebarToggle" class="icon-button" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button></div>
       <button class="primary new-workflow" id="navNew">＋ New workflow</button>
       <nav class="app-nav" aria-label="Application">
+        <button data-library-view="dashboard">◈ <span>Dashboard</span></button>
         <button class="active" data-library-view="workflows">▣ <span>Workflows</span></button>
         <button data-library-view="reviews">◇ <span>Review inbox</span></button>
         <button data-library-view="traceability">⌁ <span>Traceability</span></button>
@@ -21,8 +22,8 @@
       </nav>
       <div id="sidebarWorkflows"></div>
       <div class="sidebar-bottom">
-        <button type="button" disabled aria-label="Help is unavailable in the local MVP" title="Help is unavailable in the local MVP">?</button><span>Help <small>Unavailable</small></span>
-        <button type="button" disabled aria-label="Settings are unavailable in the local MVP" title="Settings are unavailable in the local MVP">⚙</button><span>Settings <small>Unavailable</small></span>
+        <button type="button" id="helpOpen" aria-label="Open help" title="Help">?</button><span>Help</span>
+        <button type="button" id="settingsOpen" aria-label="Open settings" title="Settings">⚙</button><span>Settings</span>
       </div>
     </aside>
 
@@ -84,6 +85,14 @@
       <p id="reviewDialogError" role="alert"></p>
       <div class="dialog-actions"><button type="button" class="secondary" id="reviewDialogCancel">Cancel</button><button class="primary" id="reviewDialogSubmit" type="submit">Confirm decision</button></div>
     </form>
+  </dialog>
+
+  <dialog id="helpDialog" class="next-dialog" aria-labelledby="helpDialogTitle">
+    <section class="dialog-card help-card"><button type="button" class="dialog-close" data-close-dialog="helpDialog" aria-label="Close">×</button><p class="eyebrow">FLOWPILOT HELP</p><h2 id="helpDialogTitle">Work through a governed handoff</h2><p class="dialog-copy">Create a workflow from a requirement, run the next available agent, and record each BRD and backlog review before continuing.</p><dl class="help-list"><div><dt>New workflow</dt><dd>Capture the outcome and submit a clear requirement.</dd></div><div><dt>Run until approval</dt><dd>Runs safe steps and stops at each human gate.</dd></div><div><dt>Review inbox</dt><dd>Find BRD and backlog artifacts awaiting a decision.</dd></div><div><dt>Shortcuts</dt><dd><kbd>Ctrl</kbd> + <kbd>Enter</kbd> creates a workflow; <kbd>Ctrl</kbd> + <kbd>K</kbd> opens FlowPilot assistant.</dd></div></dl><div class="dialog-actions"><button type="button" class="primary" id="helpStartWorkflow">Create workflow</button></div></section>
+  </dialog>
+
+  <dialog id="settingsDialog" class="next-dialog" aria-labelledby="settingsDialogTitle">
+    <form id="settingsForm" class="dialog-card"><button type="button" class="dialog-close" data-close-dialog="settingsDialog" aria-label="Close">×</button><p class="eyebrow">PREFERENCES</p><h2 id="settingsDialogTitle">Workspace settings</h2><label>Color theme<select id="settingsTheme"><option value="light">Light</option><option value="dark">Dark</option></select></label><label class="settings-check"><input id="settingsSidebar" type="checkbox"> Start with sidebar collapsed</label><p class="dialog-copy">Preferences are saved only in this browser.</p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog="settingsDialog">Cancel</button><button class="primary" type="submit">Save preferences</button></div></form>
   </dialog>
 
   <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="false"><span>✦</span><b>Ask FlowPilot</b></button>
