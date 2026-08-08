@@ -58,6 +58,12 @@ class DecisionInput(BaseModel):
     reason: str = Field(default="", max_length=2000)
 
 
+class ReviewCommentInput(BaseModel):
+    artifact_type: str = Field(min_length=1, max_length=40)
+    author: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=2000)
+
+
 class AssistantInput(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     conversation_id: str | None = Field(default=None, max_length=64)
@@ -79,7 +85,7 @@ def envelope(data: Any, status: int = 200) -> JSONResponse:
 @app.middleware("http")
 async def security_and_session(request: Request, call_next):
     """Apply a small production-safe baseline while keeping the local MVP usable."""
-    protected = request.url.path.startswith("/api/projects") or request.url.path == "/api/assistant"
+    protected = request.url.path.startswith("/api/projects") or request.url.path in {"/api/assistant", "/api/reviews"}
     if protected and not request.session.get("user_id"):
         return JSONResponse(status_code=401, content={"success": False, "error": {"code": "AUTHENTICATION_REQUIRED", "message": "Sign in to access the workspace."}, "request_id": str(uuid.uuid4())})
     response = await call_next(request)
@@ -148,7 +154,9 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS agent_runs (id INTEGER PRIMARY KEY, run_id TEXT UNIQUE, project_id INTEGER, agent TEXT, status TEXT, input_artifact TEXT, output_artifact TEXT, started_at TEXT, completed_at TEXT, error TEXT);
         CREATE TABLE IF NOT EXISTS assistant_conversations (id TEXT PRIMARY KEY, project_id INTEGER, title TEXT, created_at TEXT, updated_at TEXT);
         CREATE TABLE IF NOT EXISTS assistant_messages (id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT, created_at TEXT, FOREIGN KEY(conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE);
+        CREATE TABLE IF NOT EXISTS review_comments (id TEXT PRIMARY KEY, project_id INTEGER, artifact_type TEXT, author TEXT, body TEXT, created_at TEXT, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
         CREATE INDEX IF NOT EXISTS idx_assistant_messages_conversation ON assistant_messages(conversation_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_review_comments_project ON review_comments(project_id, created_at);
         """)
 
 
@@ -254,11 +262,12 @@ def project_payload(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, An
     audit_rows = c.execute("SELECT * FROM workflow_audit_events WHERE project_id = ? ORDER BY id", (project["id"],)).fetchall()
     history = c.execute("SELECT artifact_type,version,workflow_stage,approval_state,created_at FROM artifact_revisions WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
     runs = c.execute("SELECT run_id,agent,status,input_artifact,output_artifact,started_at,completed_at,error FROM agent_runs WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
+    comments = c.execute("SELECT id,artifact_type,author,body,created_at FROM review_comments WHERE project_id=? ORDER BY created_at", (project["id"],)).fetchall()
     artifacts = {}
     for key in keys:
         content, row = latest_revision(c, project, key)
         artifacts[key] = {**content, "version":row["version"], "created_at":row["created_at"], "approval_state":row["approval_state"]} if row else artifact(c, project["id"], key)
-    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "agent_runs":[dict(x) for x in runs], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
+    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "agent_runs":[dict(x) for x in runs], "comments":[dict(x) for x in comments], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
 
 
 @app.get("/")
@@ -340,6 +349,25 @@ def workspace_overview() -> JSONResponse:
 def get_project(project_id: str) -> JSONResponse:
     with db() as c:
         return envelope(project_payload(c, project_row(c, project_id)))
+
+
+@app.get("/api/reviews")
+def review_inbox() -> JSONResponse:
+    with db() as c:
+        rows = c.execute("SELECT public_id,name,state,created_at FROM projects WHERE state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL') ORDER BY created_at").fetchall()
+        return envelope([{**dict(row), "artifact_type": "brd" if row["state"] == "BRD_AWAITING_APPROVAL" else "backlog"} for row in rows])
+
+
+@app.post("/api/projects/{project_id}/comments")
+def add_review_comment(project_id: str, payload: ReviewCommentInput) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        artifact_type = payload.artifact_type.strip().lower()
+        if artifact_type not in {"requirement", "analysis", "brd", "backlog", "tests", "traceability", "qa_handoff"}:
+            raise HTTPException(422, {"code": "INVALID_ARTIFACT", "message": "Choose a valid workflow artifact."})
+        comment = {"id": str(uuid.uuid4()), "artifact_type": artifact_type, "author": payload.author.strip(), "body": payload.body.strip(), "created_at": now()}
+        c.execute("INSERT INTO review_comments(id,project_id,artifact_type,author,body,created_at) VALUES(?,?,?,?,?,?)", (comment["id"], project["id"], comment["artifact_type"], comment["author"], comment["body"], comment["created_at"]))
+        return envelope(comment, 201)
 
 
 def assistant_reply(project: sqlite3.Row | None, artifacts: dict[str, Any], message: str, history: list[sqlite3.Row]) -> str:
