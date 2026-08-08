@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260808-delivery1">
+  <link rel="stylesheet" href="/static/styles.css?v=20260808-voice-input">
 </head>
 <body>
   <div class="app-shell">
@@ -37,8 +37,9 @@
             <div><h2>What are you building?</h2><p>Describe the intended behaviour, rules, and outcome.</p></div>
             <label>Load sample scenario<select id="sampleRequirement"><option>Loading scenarios...</option></select></label>
           </div>
-          <label for="requirement">Requirement description</label>
+          <div class="field-label-row"><label for="requirement">Requirement description</label><button type="button" id="requirementVoice" class="voice-button" aria-label="Start voice input for requirement" title="Dictate requirement"><span aria-hidden="true">🎙</span><span class="voice-button-label">Dictate</span></button></div>
           <textarea id="requirement" required placeholder="Describe the feature, its users, business rules, and expected outcome."></textarea>
+          <div id="requirementVoiceStatus" class="voice-status" role="status" aria-live="polite" hidden></div>
           <div class="input-meta"><span>Include users, rules, and the expected result for the strongest handoff.</span><strong id="requirementCount">0 / 10,000</strong></div>
           <div class="prompt-chips" aria-label="Requirement templates"><button type="button" data-prompt="Users & personas">Users & personas</button><button type="button" data-prompt="Business rules">Business rules</button><button type="button" data-prompt="Acceptance criteria">Acceptance criteria</button><button type="button" data-prompt="Expected outcome">Expected outcome</button><button type="button" data-prompt="Constraints">Constraints</button><button type="button" data-prompt="Edge cases">Edge cases</button></div>
           <button type="button" id="aiImprove" class="ai-assist">✦ Improve with FlowPilot AI</button><section id="aiSuggestion" class="ai-suggestion" hidden><div><p>FLOWPILOT SUGGESTS</p><strong>Make the requirement easier to test</strong><span>Add actors, a failure path, acceptance criteria, and validation constraints.</span></div><div><button type="button" id="applyAiSuggestion" class="secondary">Apply structure</button><button type="button" id="dismissAiSuggestion" class="icon-button" aria-label="Dismiss suggestion">×</button></div></section>
@@ -83,10 +84,11 @@
       <button data-chat-question="Explain this workflow">Explain this workflow</button>
       <button data-chat-question="What are the approval gates?">Approval gates</button>
     </div>
-    <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask about this workflow…"></textarea><button id="chatSend" class="primary" aria-label="Send message">↑</button></form>
+    <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask about this workflow…"></textarea><button type="button" id="chatVoice" class="voice-button compact" aria-label="Start voice input for assistant" title="Dictate message">🎙</button><button id="chatSend" class="primary" aria-label="Send message">↑</button></form>
+    <div id="chatVoiceStatus" class="voice-status chat-voice-status" role="status" aria-live="polite" hidden></div>
   </section>
 
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=20260808-delivery1"></script>
+  <script src="/static/app.js?v=20260808-voice-input"></script>
 </body>
 </html>

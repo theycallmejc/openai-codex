@@ -4,6 +4,10 @@ let view = 'Requirement';
 let samples = [];
 let chatConversationId = null;
 let chatAbortController = null;
+let voiceRecognition = null;
+let voiceTarget = null;
+let voiceStartedAt = 0;
+let voiceTimer = null;
 
 const tabs = ['Requirement', 'Analysis', 'BRD', 'Backlog', 'Tests', 'Traceability', 'QA Handoff'];
 const stages = [
@@ -33,6 +37,40 @@ function toast(message, type = 'info') {
   item.className = `toast ${type}`; item.textContent = message;
   $('toasts').append(item);
   window.setTimeout(() => item.remove(), 3600);
+}
+
+function voiceSupported() { return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition); }
+function stopVoiceInput() { if (voiceRecognition) voiceRecognition.stop(); }
+function resetVoiceUi() {
+  clearInterval(voiceTimer); voiceTimer = null;
+  ['requirementVoice', 'chatVoice'].forEach(id => $(id)?.classList.remove('recording'));
+  ['requirementVoiceStatus', 'chatVoiceStatus'].forEach(id => { if ($(id)) $(id).hidden = true; });
+  voiceRecognition = null; voiceTarget = null;
+}
+function startVoiceInput(target) {
+  if (!voiceSupported()) { toast('Voice input is not available in this browser. Try a Chromium-based browser with microphone permission.', 'error'); return; }
+  if (voiceRecognition) { stopVoiceInput(); return; }
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new Recognition(); const button = $(`${target}Voice`); const statusEl = $(`${target}VoiceStatus`);
+  voiceTarget = target; voiceRecognition = recognition;
+  recognition.lang = navigator.language || 'en-US'; recognition.continuous = false; recognition.interimResults = true;
+  recognition.onstart = () => {
+    voiceStartedAt = Date.now(); button.classList.add('recording'); statusEl.hidden = false;
+    const updateStatus = () => { statusEl.textContent = `Listening… ${Math.floor((Date.now() - voiceStartedAt) / 1000)}s`; };
+    updateStatus(); voiceTimer = setInterval(updateStatus, 250);
+  };
+  recognition.onresult = event => {
+    const transcript = Array.from(event.results).map(result => result[0].transcript).join(' ').trim();
+    if (transcript) {
+      const input = $(target === 'requirement' ? 'requirement' : 'chatInput');
+      input.value = `${input.value.trim()}${input.value.trim() ? ' ' : ''}${transcript}`; input.focus();
+      if (target === 'requirement') updateRequirementCount();
+      statusEl.textContent = event.results[event.results.length - 1].isFinal ? 'Transcript added. Review it before sending.' : 'Transcribing…';
+    }
+  };
+  recognition.onerror = event => { if (event.error !== 'aborted') toast(event.error === 'not-allowed' ? 'Microphone permission was not granted.' : 'Voice input could not start.', 'error'); };
+  recognition.onend = resetVoiceUi;
+  try { recognition.start(); } catch (_) { resetVoiceUi(); }
 }
 
 function setTheme(theme) {
@@ -541,6 +579,7 @@ $('workflowForm').addEventListener('submit', async event => {
 
 $('clearForm').onclick = () => { $('requirement').value = ''; $('formError').textContent = ''; updateRequirementCount(); };
 $('requirement').addEventListener('input', updateRequirementCount);
+$('requirementVoice').onclick = () => startVoiceInput('requirement');
 document.querySelectorAll('[data-prompt]').forEach(button => button.onclick = () => {
   const templates = {'Users & personas':'Users and personas:\n- Primary user: \n- Secondary user: ','Business rules':'Business rules:\n- ','Acceptance criteria':'Acceptance criteria:\n- Given \n- When \n- Then ','Expected outcome':'Expected outcome:\n- ','Constraints':'Constraints:\n- ','Edge cases':'Edge cases:\n- '};
   const area = $('requirement'); area.value = `${area.value.trim()}${area.value.trim() ? '\n\n' : ''}${templates[button.dataset.prompt]}`; area.focus(); updateRequirementCount();
@@ -566,7 +605,12 @@ $('chatClose').onclick = () => toggleChat(false);
 $('chatNew').onclick = () => { chatConversationId = null; $('chatMessages').replaceChildren(); addChatMessage('New conversation started. How can I help?'); };
 $('chatClear').onclick = async () => { if (chatConversationId && project) await fetch(`/api/projects/${project.public_id}/assistant/conversations/${chatConversationId}`, {method:'DELETE'}); $('chatNew').click(); };
 $('chatForm').addEventListener('submit', event => { event.preventDefault(); const message = $('chatInput').value; $('chatInput').value = ''; askChat(message); });
+$('chatVoice').onclick = () => startVoiceInput('chat');
 $('chatInput').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('chatForm').requestSubmit(); } if (event.key === 'Escape' && chatAbortController) chatAbortController.abort(); });
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && voiceRecognition) stopVoiceInput();
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); toggleChat(true); }
+});
 document.querySelectorAll('[data-chat-question]').forEach(button => button.onclick = () => askChat(button.dataset.chatQuestion));
 addChatMessage('Hi, I’m your workflow guide. Ask what to do next, or choose a quick question below.');
 
