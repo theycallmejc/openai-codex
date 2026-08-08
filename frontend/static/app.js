@@ -445,7 +445,48 @@ async function showLibrary(screen = 'workflows') {
   }
 }
 
+function dashboardState(projectItem) {
+  if (projectItem.state.includes('AWAITING_APPROVAL')) return {label:'Approval required', tone:'review'};
+  if (projectItem.agent_runs?.some(run => run.status === 'running')) return {label:'AI analyzing', tone:'running'};
+  if (projectItem.state === 'COMPLETED') return {label:'Artifact ready', tone:'ready'};
+  if (projectItem.state === 'FAILED') return {label:'Needs attention', tone:'risk'};
+  return {label:'In progress', tone:'running'};
+}
+
+function dashboardAction(projectItem) {
+  const next = buildViewModel(projectItem, 'Requirement').nextAction;
+  if (projectItem.state.includes('AWAITING_APPROVAL')) return 'Review approval';
+  if (projectItem.state === 'COMPLETED') return 'Open QA handoff';
+  if (projectItem.state === 'TESTS_GENERATED') return 'Open traceability';
+  return next.label || 'Resume workflow';
+}
+
+function dashboardCard(projectItem, detail = '') {
+  const state = dashboardState(projectItem);
+  return `<article class="operations-card"><div><span class="operations-kicker ${state.tone}">${esc(state.label)}</span><h3>${esc(projectItem.name)}</h3><p>${esc(detail || buildViewModel(projectItem, 'Requirement').nextAction.detail)}</p></div><button class="secondary" data-dashboard-open="${esc(projectItem.public_id)}">${esc(dashboardAction(projectItem))}</button></article>`;
+}
+
+function renderOperationalDashboard(projects, dashboard) {
+  const sorted = projects.slice().sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+  const active = sorted.filter(item => !['DRAFT', 'COMPLETED', 'FAILED'].includes(item.state));
+  const reviews = sorted.filter(item => item.state.includes('AWAITING_APPROVAL'));
+  const ready = sorted.filter(item => item.state === 'COMPLETED');
+  const riskInsights = sorted.flatMap(item => (item.orchestration_runs || []).filter(run => run.agent === 'risk' && run.status === 'completed').flatMap(run => (run.result?.risks || []).map(risk => ({project:item, risk}))));
+  const coverageGaps = sorted.filter(item => item.state === 'TESTS_GENERATED' || (item.artifacts?.traceability && !item.artifacts.traceability.valid));
+  const continueItem = active.find(item => !item.state.includes('AWAITING_APPROVAL')) || reviews[0] || sorted[0];
+  const body = `<header class="library-header dashboard-header"><div><p>FLOWPILOT WORKSPACE</p><h1>Operational workspace</h1><span>Continue delivery work, resolve approvals, and review evidence from one place.</span></div><button class="primary" data-library-new>New workflow <i>→</i></button></header>
+    <section class="workspace-metrics" aria-label="Workspace overview"><div><span>All workflows</span><b>${dashboard.metrics.total || 0}</b></div><div><span>Active</span><b>${dashboard.metrics.active || 0}</b></div><div><span>Approval required</span><b>${dashboard.metrics.awaiting_review || 0}</b></div><div><span>Artifacts ready</span><b>${dashboard.metrics.completed || 0}</b></div></section>
+    ${continueItem ? `<section class="continue-work"><div><p>CONTINUE WHERE YOU LEFT OFF</p><h2>${esc(continueItem.name)}</h2><span>${esc(buildViewModel(continueItem, 'Requirement').nextAction.detail)}</span></div><button class="primary" data-dashboard-open="${esc(continueItem.public_id)}">${esc(dashboardAction(continueItem))} <i>→</i></button></section>` : `<section class="empty-library"><h1>Start your first workflow</h1><p>Capture a requirement and FlowPilot will guide the reviewed path to QA evidence.</p><button class="primary" data-library-new>New workflow <i>→</i></button></section>`}
+    <div class="operations-grid"><section><div class="operations-heading"><div><p>ACTIVE DELIVERY</p><h2>What is moving</h2></div><span>${active.length}</span></div>${active.length ? active.slice(0, 3).map(item => dashboardCard(item)).join('') : '<p class="empty-copy">No active workflow is currently running.</p>'}</section><section><div class="operations-heading"><div><p>HUMAN DECISIONS</p><h2>Needs your attention</h2></div><span>${reviews.length}</span></div>${reviews.length ? reviews.slice(0, 3).map(item => dashboardCard(item, `Review the ${item.state.startsWith('BRD') ? 'BRD' : 'backlog'} before the workflow can continue.`)).join('') : '<p class="empty-copy">No approvals are waiting.</p>'}</section></div>
+    <div class="operations-grid"><section><div class="operations-heading"><div><p>AI FINDINGS</p><h2>Unresolved risks</h2></div><span>${riskInsights.length}</span></div>${riskInsights.length ? riskInsights.slice(0, 3).map(({project: item, risk}) => `<article class="insight-row"><b>${esc(risk.severity)}</b><div><strong>${esc(risk.risk)}</strong><span>${esc(risk.mitigation)}</span></div><button class="secondary" data-dashboard-open="${esc(item.public_id)}">Review finding</button></article>`).join('') : '<p class="empty-copy">No recorded risk findings yet. Run the agent workflow on a captured requirement to review risks.</p>'}</section><section><div class="operations-heading"><div><p>QA EVIDENCE</p><h2>Coverage and artifacts</h2></div><span>${ready.length}</span></div>${coverageGaps.length ? coverageGaps.slice(0, 2).map(item => dashboardCard(item, 'Coverage needs traceability validation before the QA handoff can be created.')).join('') : ready.length ? ready.slice(0, 2).map(item => dashboardCard(item, 'QA-ready artifact is available with approved traceability.')).join('') : '<p class="empty-copy">QA artifacts will appear after approved backlog, generated tests, and traceability validation.</p>'}</section></div>
+    <section class="event-feed dashboard-feed"><div class="operations-heading"><div><p>RECENT WORKFLOWS</p><h2>Latest activity</h2></div></div>${sorted.length ? sorted.slice(0, 5).map(item => `<button class="event-row" data-dashboard-open="${esc(item.public_id)}"><b>›</b><div><strong>${esc(item.name)}</strong><span>${esc(dashboardState(item).label)} · updated ${time(item.updated_at || item.created_at)}</span></div><em>${esc(item.public_id)}</em></button>`).join('') : ''}</section>`;
+  $('libraryView').innerHTML = body;
+  document.querySelectorAll('[data-dashboard-open]').forEach(button => button.onclick = async () => { project = await api(`/api/projects/${button.dataset.dashboardOpen}`); view = project.state === 'COMPLETED' ? 'QA Handoff' : 'Requirement'; render(); });
+  document.querySelectorAll('[data-library-new]').forEach(button => button.onclick = () => reset());
+}
+
 function renderLibrary(screen, projects, overview, reviews = [], dashboard = {metrics:{},recent:[]}) {
+  if (screen === 'dashboard') return renderOperationalDashboard(projects, dashboard);
   const completed = projects.filter(item => item.state === 'COMPLETED');
   const withTraceability = projects.filter(item => item.artifacts?.traceability?.valid);
   const auditEvents = projects.flatMap(item => (item.audit_events || []).map(event => ({...event, project:item}))).sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));

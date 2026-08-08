@@ -78,6 +78,7 @@ def test_workspace_apis_require_a_server_side_session(tmp_path,monkeypatch):
 def test_login_and_workspace_are_served_as_separate_pages(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch)
     assert "Sign in to your workspace" in c.get("/").text
+    assert c.get("/static/login-motion.js").status_code == 200
     assert "Describe the outcome" in c.get("/app").text
 
 
@@ -110,3 +111,12 @@ def test_orchestration_runs_dependencies_in_order_and_persists_history(tmp_path,
     runs = c.get(f"/api/projects/{p}/orchestration/runs").json()["data"]
     assert {run["agent"] for run in runs} == {"requirement", "risk", "review"}
     assert c.post(f"/api/projects/{p}/orchestration/review/feedback", json={"useful": True}).status_code == 200
+
+
+def test_project_payload_includes_persisted_agent_findings_for_dashboard(tmp_path, monkeypatch):
+    c = client(tmp_path, monkeypatch); p = create(c)
+    c.post(f"/api/projects/{p}/requirements", json={"raw_requirement":"Users can retry a password reset. Given a valid account, when reset is requested, then send one secure link."})
+    c.post(f"/api/projects/{p}/orchestration/run-all")
+    payload = c.get(f"/api/projects/{p}").json()["data"]
+    assert {run["agent"] for run in payload["orchestration_runs"]} == {"requirement", "risk", "review"}
+    assert payload["orchestration_runs"][0]["result"] is not None

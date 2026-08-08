@@ -307,13 +307,14 @@ def project_payload(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, An
     audit_rows = c.execute("SELECT * FROM workflow_audit_events WHERE project_id = ? ORDER BY id", (project["id"],)).fetchall()
     history = c.execute("SELECT artifact_type,version,workflow_stage,approval_state,created_at FROM artifact_revisions WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
     runs = c.execute("SELECT run_id,agent,status,input_artifact,output_artifact,started_at,completed_at,error FROM agent_runs WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
+    orchestration_runs = c.execute("SELECT id,agent,status,result_json,error,started_at,completed_at FROM orchestrator_runs WHERE project_id=? ORDER BY started_at DESC, id DESC", (project["id"],)).fetchall()
     comments = c.execute("SELECT id,artifact_type,author,body,created_at FROM review_comments WHERE project_id=? ORDER BY created_at", (project["id"],)).fetchall()
     assignments = c.execute("SELECT artifact_type,reviewer,assigned_at FROM review_assignments WHERE project_id=?", (project["id"],)).fetchall()
     artifacts = {}
     for key in keys:
         content, row = latest_revision(c, project, key)
         artifacts[key] = {**content, "version":row["version"], "created_at":row["created_at"], "approval_state":row["approval_state"]} if row else artifact(c, project["id"], key)
-    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "agent_runs":[dict(x) for x in runs], "comments":[dict(x) for x in comments], "review_assignments":[dict(x) for x in assignments], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
+    return {"public_id": project["public_id"], "name": project["name"], "description": project["description"], "state": project["state"], "artifacts": artifacts, "artifact_history":[dict(x) for x in history], "agent_runs":[dict(x) for x in runs], "orchestration_runs":[{**{key: row[key] for key in ("id", "agent", "status", "error", "started_at", "completed_at")}, "result": json.loads(row["result_json"]) if row["result_json"] else None} for row in orchestration_runs], "comments":[dict(x) for x in comments], "review_assignments":[dict(x) for x in assignments], "audit_events":[{**dict(x),"metadata":json.loads(x["metadata_json"])} for x in audit_rows]}
 
 
 @app.get("/")
@@ -328,7 +329,7 @@ def workspace() -> FileResponse:
 
 @app.get("/static/{asset}")
 def static(asset: str) -> FileResponse:
-    if asset not in {"app.js", "styles.css"}:
+    if asset not in {"app.js", "styles.css", "login-motion.js"}:
         raise HTTPException(404, {"code": "NOT_FOUND", "message": "Asset not found"})
     return FileResponse(ROOT / "frontend" / "static" / asset)
 
