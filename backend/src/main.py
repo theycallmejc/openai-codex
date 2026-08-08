@@ -224,6 +224,11 @@ def project_payload(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, An
 
 @app.get("/")
 def home() -> FileResponse:
+    return FileResponse(ROOT / "frontend" / "login.html")
+
+
+@app.get("/app")
+def workspace() -> FileResponse:
     return FileResponse(ROOT / "frontend" / "index.html")
 
 

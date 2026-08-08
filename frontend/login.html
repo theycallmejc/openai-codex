@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark">
+  <title>Sign in · FlowPilot</title><link rel="stylesheet" href="/static/styles.css?v=20260808-login-page">
+</head>
+<body>
+  <main class="login-view"><section class="login-panel" aria-labelledby="loginTitle"><div class="login-brand"><span>✦</span><strong>FlowPilot</strong><b>LOCAL</b></div><p class="eyebrow">GOVERNED DELIVERY WORKSPACE</p><h1 id="loginTitle">Sign in to your workspace</h1><p class="login-copy">Create traceable requirements, reviewed handoffs, and QA-ready delivery evidence.</p><form id="loginForm"><label>Email<input id="loginEmail" type="email" autocomplete="email" value="admin@flowpilot.local" required></label><label>Password<input id="loginPassword" type="password" autocomplete="current-password" value="flowpilot" required></label><p id="loginError" role="alert"></p><button id="loginSubmit" class="primary" type="submit">Sign in <i>→</i></button></form><p class="login-help">Local demo account is prefilled for this environment.</p></section><aside class="login-aside" aria-hidden="true"><span>FLOWPILOT</span><h2>From a clear brief<br>to a confident handoff.</h2><ul><li>Structured requirements</li><li>Human review gates</li><li>Traceable QA evidence</li></ul></aside></main>
+  <script>
+    const form=document.getElementById('loginForm'),button=document.getElementById('loginSubmit'),error=document.getElementById('loginError');
+    form.addEventListener('submit',async event=>{event.preventDefault();error.textContent='';button.disabled=true;button.textContent='Signing in…';try{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('loginEmail').value,password:document.getElementById('loginPassword').value})});const json=await response.json();if(!response.ok||!json.success)throw Error(json.error?.message||'Unable to sign in.');localStorage.setItem('flowpilot.user',JSON.stringify(json.data));window.location.assign('/app')}catch(failure){error.textContent=failure.message;button.disabled=false;button.innerHTML='Sign in <i>→</i>'}});
+    try{if(JSON.parse(localStorage.getItem('flowpilot.user')||'null')?.name)window.location.replace('/app')}catch(_){localStorage.removeItem('flowpilot.user')}
+  </script>
+</body>
+</html>
