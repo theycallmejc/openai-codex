@@ -40,6 +40,11 @@ function toast(message, type = 'info') {
   window.setTimeout(() => item.remove(), 3600);
 }
 
+function openWorkspace(user) {
+  $('loginView').hidden = true; $('appShell').hidden = false;
+  $('accountName').textContent = user.name;
+}
+
 function voiceSupported() { return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition); }
 function stopVoiceInput() { if (voiceRecognition) voiceRecognition.stop(); }
 function resetVoiceUi() {
@@ -695,3 +700,16 @@ api('/api/samples').then(data => {
 }).catch(error => $('formError').textContent = error.message);
 
 initPointerGlow();
+
+$('loginForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = $('loginSubmit'); const error = $('loginError');
+  error.textContent = ''; button.disabled = true; button.innerHTML = 'Signing in…';
+  try {
+    const user = await api('/api/auth/login', {email:$('loginEmail').value, password:$('loginPassword').value});
+    localStorage.setItem('flowpilot.user', JSON.stringify(user)); openWorkspace(user);
+  } catch (failure) { error.textContent = failure.message; }
+  finally { button.disabled = false; button.innerHTML = 'Sign in <i>→</i>'; }
+});
+$('signOut').onclick = () => { localStorage.removeItem('flowpilot.user'); $('appShell').hidden = true; $('loginView').hidden = false; $('loginPassword').focus(); };
+try { const user = JSON.parse(localStorage.getItem('flowpilot.user') || 'null'); if (user?.name) openWorkspace(user); } catch (_) { localStorage.removeItem('flowpilot.user'); }

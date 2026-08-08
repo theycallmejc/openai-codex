@@ -5,10 +5,13 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260808-editor-workspace">
+  <link rel="stylesheet" href="/static/styles.css?v=20260808-local-login">
 </head>
 <body>
-  <div class="app-shell">
+  <main id="loginView" class="login-view">
+    <section class="login-panel" aria-labelledby="loginTitle"><div class="login-brand"><span>✦</span><strong>FlowPilot</strong><b>LOCAL</b></div><p class="eyebrow">GOVERNED DELIVERY WORKSPACE</p><h1 id="loginTitle">Sign in to your workspace</h1><p class="login-copy">Create traceable requirements, reviewed handoffs, and QA-ready delivery evidence.</p><form id="loginForm"><label>Email<input id="loginEmail" type="email" autocomplete="email" value="admin@flowpilot.local" required></label><label>Password<input id="loginPassword" type="password" autocomplete="current-password" value="flowpilot" required></label><p id="loginError" role="alert"></p><button id="loginSubmit" class="primary" type="submit">Sign in <i>→</i></button></form><p class="login-help">Local demo account is prefilled for this environment.</p></section><aside class="login-aside" aria-hidden="true"><span>FLOWPILOT</span><h2>From a clear brief<br>to a confident handoff.</h2><ul><li>Structured requirements</li><li>Human review gates</li><li>Traceable QA evidence</li></ul></aside>
+  </main>
+  <div class="app-shell" id="appShell" hidden>
     <aside class="sidebar" id="sidebar">
       <div class="brand"><span aria-hidden="true">✦</span><strong>FlowPilot</strong><b>BETA</b><button id="sidebarToggle" class="icon-button" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button></div>
       <button class="primary new-workflow" id="navNew">＋ New workflow</button>
@@ -26,7 +29,7 @@
     </aside>
 
     <main class="main">
-      <header class="topbar"><span id="crumb">New workflow</span><div class="topbar-actions"><span id="status" hidden></span><button id="themeToggle" class="icon-button" aria-label="Toggle color theme" title="Toggle color theme">◐</button></div></header>
+      <header class="topbar"><span id="crumb">New workflow</span><div class="topbar-actions"><span id="status" hidden></span><span id="accountName" class="account-name"></span><button id="signOut" class="icon-button" aria-label="Sign out" title="Sign out">↪</button><button id="themeToggle" class="icon-button" aria-label="Toggle color theme" title="Toggle color theme">◐</button></div></header>
 
       <section id="creationView" class="creation-view">
         <header class="new-hero launch-banner" id="launchBanner"><div class="banner-copy"><p>WORKFLOW DRAFT · LOCAL</p><h1>Build QA-ready evidence from a requirement.</h1><span>Define the outcome, improve the brief with AI, then move through reviewed delivery stages.</span></div><div class="banner-flow" aria-label="Workflow status"><span class="banner-flow-label">DELIVERY PATH</span><ol><li class="current"><b>01</b><span>Describe</span></li><li><b>02</b><span>Agents</span></li><li><b>03</b><span>Review</span></li><li><b>04</b><span>Generate</span></li></ol></div></header>
@@ -87,6 +90,6 @@
   </section>
 
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=20260808-editor-workspace"></script>
+  <script src="/static/app.js?v=20260808-local-login"></script>
 </body>
 </html>

@@ -44,6 +44,14 @@ def test_projects_library_lists_created_workflows(tmp_path,monkeypatch):
     assert overview["active_workflows"]==0
 
 
+def test_local_login_accepts_demo_account_and_rejects_invalid_credentials(tmp_path,monkeypatch):
+    c=client(tmp_path,monkeypatch)
+    logged_in=c.post("/api/auth/login",json={"email":"admin@flowpilot.local","password":"flowpilot"})
+    assert logged_in.status_code==200
+    assert logged_in.json()["data"]["name"]=="FlowPilot Admin"
+    assert c.post("/api/auth/login",json={"email":"admin@flowpilot.local","password":"incorrect"}).status_code==401
+
+
 def test_project_assistant_returns_contextual_workflow_guidance(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch); p=create(c)
     c.post(f"/api/projects/{p}/requirements",json={"raw_requirement":"Users can save a shopping list."})

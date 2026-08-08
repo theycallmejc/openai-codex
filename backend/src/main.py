@@ -51,6 +51,11 @@ class AssistantInput(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=64)
 
 
+class LoginInput(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -233,6 +238,15 @@ def static(asset: str) -> FileResponse:
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"status": "ok", "mode": "deterministic", "rules_version": RULES_VERSION}
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginInput) -> JSONResponse:
+    """Local development sign-in; production identity provider integration is intentionally out of scope."""
+    email = payload.email.strip().lower()
+    if email == "admin@flowpilot.local" and payload.password == "flowpilot":
+        return envelope({"id": "local-admin", "name": "FlowPilot Admin", "email": email, "workspace": "Local workspace"})
+    raise HTTPException(401, {"code": "INVALID_CREDENTIALS", "message": "Use the local demo account or check your credentials."})
 
 
 @app.post("/api/projects", status_code=201)
