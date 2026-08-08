@@ -47,6 +47,12 @@ logger = logging.getLogger("flowpilot")
 class ProjectInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=500)
+    workspace_id: str | None = Field(default=None, max_length=32)
+
+
+class WorkspaceInput(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    owner: str = Field(default="FlowPilot Admin", max_length=120)
 
 
 class RequirementInput(BaseModel):
@@ -90,7 +96,7 @@ def envelope(data: Any, status: int = 200) -> JSONResponse:
 @app.middleware("http")
 async def security_and_session(request: Request, call_next):
     """Apply a small production-safe baseline while keeping the local MVP usable."""
-    protected = request.url.path.startswith("/api/projects") or request.url.path in {"/api/assistant", "/api/reviews", "/api/dashboard"}
+    protected = request.url.path.startswith("/api/projects") or request.url.path.startswith("/api/workspaces") or request.url.path in {"/api/assistant", "/api/reviews", "/api/dashboard"}
     if protected and not request.session.get("user_id"):
         return JSONResponse(status_code=401, content={"success": False, "error": {"code": "AUTHENTICATION_REQUIRED", "message": "Sign in to access the workspace."}, "request_id": str(uuid.uuid4())})
     response = await call_next(request)
@@ -150,6 +156,7 @@ def init_db() -> None:
     with db() as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, public_id TEXT UNIQUE, name TEXT, description TEXT, state TEXT, created_at TEXT);
+        CREATE TABLE IF NOT EXISTS workspaces (id INTEGER PRIMARY KEY, public_id TEXT UNIQUE, name TEXT UNIQUE, owner TEXT, created_at TEXT);
         CREATE TABLE IF NOT EXISTS requirements (id INTEGER PRIMARY KEY, project_id INTEGER UNIQUE, raw_text TEXT, content_hash TEXT, created_at TEXT);
         CREATE TABLE IF NOT EXISTS artifacts (id INTEGER PRIMARY KEY, project_id INTEGER, kind TEXT, content_json TEXT, created_at TEXT, UNIQUE(project_id, kind));
         CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY, project_id INTEGER, stage TEXT, outcome TEXT, actor TEXT, rules_version TEXT, reason TEXT, created_at TEXT);
@@ -164,6 +171,16 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_assistant_messages_conversation ON assistant_messages(conversation_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_review_comments_project ON review_comments(project_id, created_at);
         """)
+        columns = {row["name"] for row in c.execute("PRAGMA table_info(projects)").fetchall()}
+        if "workspace_id" not in columns:
+            c.execute("ALTER TABLE projects ADD COLUMN workspace_id INTEGER REFERENCES workspaces(id)")
+        workspace = c.execute("SELECT * FROM workspaces ORDER BY id LIMIT 1").fetchone()
+        if not workspace:
+            c.execute("INSERT INTO workspaces(public_id,name,owner,created_at) VALUES('',?,?,?)", ("My workspace", "FlowPilot Admin", now()))
+            workspace_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
+            c.execute("UPDATE workspaces SET public_id=? WHERE id=?", (public_id("WS", workspace_id), workspace_id))
+            workspace = c.execute("SELECT * FROM workspaces WHERE id=?", (workspace_id,)).fetchone()
+        c.execute("UPDATE projects SET workspace_id=? WHERE workspace_id IS NULL", (workspace["id"],))
 
 
 def public_id(prefix: str, numeric_id: int) -> str:
@@ -175,6 +192,15 @@ def project_row(c: sqlite3.Connection, project_id: str) -> sqlite3.Row:
     if not row:
         raise HTTPException(404, {"code": "PROJECT_NOT_FOUND", "message": "Project does not exist"})
     return row
+
+
+def workspace_row(c: sqlite3.Connection, workspace_id: str | None) -> sqlite3.Row:
+    if workspace_id:
+        row = c.execute("SELECT * FROM workspaces WHERE public_id=?", (workspace_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, {"code":"WORKSPACE_NOT_FOUND", "message":"Workspace does not exist."})
+        return row
+    return c.execute("SELECT * FROM workspaces ORDER BY id LIMIT 1").fetchone()
 
 
 def artifact(c: sqlite3.Connection, project_key: int, kind: str) -> Any | None:
@@ -316,30 +342,68 @@ def logout(request: Request) -> JSONResponse:
     return envelope({"signed_out": True})
 
 
+@app.get("/api/workspaces")
+def list_workspaces() -> JSONResponse:
+    with db() as c:
+        rows = c.execute("SELECT w.public_id,w.name,w.owner,w.created_at,COUNT(p.id) AS workflow_count FROM workspaces w LEFT JOIN projects p ON p.workspace_id=w.id GROUP BY w.id ORDER BY w.id").fetchall()
+        return envelope([dict(row) for row in rows])
+
+
+@app.post("/api/workspaces")
+def create_workspace(payload: WorkspaceInput) -> JSONResponse:
+    with db() as c:
+        cursor = c.execute("INSERT INTO workspaces(public_id,name,owner,created_at) VALUES('',?,?,?)", (payload.name.strip(), payload.owner.strip() or "FlowPilot Admin", now()))
+        workspace_id = public_id("WS", cursor.lastrowid)
+        c.execute("UPDATE workspaces SET public_id=? WHERE id=?", (workspace_id, cursor.lastrowid))
+        return envelope({"public_id":workspace_id,"name":payload.name.strip(),"owner":payload.owner.strip() or "FlowPilot Admin"}, 201)
+
+
+@app.post("/api/workspaces/{workspace_id}/update")
+def update_workspace(workspace_id: str, payload: WorkspaceInput) -> JSONResponse:
+    with db() as c:
+        workspace = workspace_row(c, workspace_id)
+        c.execute("UPDATE workspaces SET name=?,owner=? WHERE id=?", (payload.name.strip(), payload.owner.strip() or workspace["owner"], workspace["id"]))
+        return envelope({"public_id":workspace_id,"name":payload.name.strip(),"owner":payload.owner.strip() or workspace["owner"]})
+
+
+@app.post("/api/workspaces/{workspace_id}/delete")
+def delete_workspace(workspace_id: str) -> JSONResponse:
+    with db() as c:
+        workspace = workspace_row(c, workspace_id)
+        count = c.execute("SELECT COUNT(*) FROM projects WHERE workspace_id=?", (workspace["id"],)).fetchone()[0]
+        if count:
+            raise HTTPException(409, {"code":"WORKSPACE_NOT_EMPTY", "message":"Move or delete this workspace's workflows before deleting it."})
+        c.execute("DELETE FROM workspaces WHERE id=?", (workspace["id"],))
+        return envelope({"deleted":True,"public_id":workspace_id})
+
+
 @app.post("/api/projects", status_code=201)
 def create_project(payload: ProjectInput) -> JSONResponse:
     with db() as c:
-        cursor = c.execute("INSERT INTO projects(public_id,name,description,state,created_at) VALUES('',?,?,?,?)", (payload.name.strip(), payload.description.strip(), "DRAFT", now()))
+        workspace = workspace_row(c, payload.workspace_id)
+        cursor = c.execute("INSERT INTO projects(public_id,name,description,state,created_at,workspace_id) VALUES('',?,?,?,?,?)", (payload.name.strip(), payload.description.strip(), "DRAFT", now(), workspace["id"]))
         project_id = public_id("PRJ", cursor.lastrowid)
         c.execute("UPDATE projects SET public_id = ? WHERE id = ?", (project_id, cursor.lastrowid))
         return envelope({"public_id": project_id, "state": "DRAFT"}, 201)
 
 
 @app.get("/api/projects")
-def list_projects() -> JSONResponse:
+def list_projects(workspace_id: str | None = None) -> JSONResponse:
     with db() as c:
+        workspace = workspace_row(c, workspace_id)
         rows = c.execute("""
             SELECT p.public_id,p.name,p.description,p.state,p.created_at,
               COALESCE((SELECT MAX(timestamp) FROM workflow_audit_events WHERE project_id=p.id), p.created_at) AS updated_at,
               (SELECT COUNT(*) FROM agent_runs WHERE project_id=p.id) AS agent_run_count
-            FROM projects p ORDER BY updated_at DESC, p.id DESC
-        """).fetchall()
+            FROM projects p WHERE p.workspace_id=? ORDER BY updated_at DESC, p.id DESC
+        """, (workspace["id"],)).fetchall()
         return envelope([dict(row) for row in rows])
 
 
 @app.get("/api/workspace/overview")
-def workspace_overview() -> JSONResponse:
+def workspace_overview(workspace_id: str | None = None) -> JSONResponse:
     with db() as c:
+        workspace = workspace_row(c, workspace_id)
         row = c.execute("""
             SELECT
               COUNT(*) AS total_workflows,
@@ -347,8 +411,8 @@ def workspace_overview() -> JSONResponse:
               SUM(CASE WHEN state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL') THEN 1 ELSE 0 END) AS awaiting_review,
               SUM(CASE WHEN state NOT IN ('DRAFT','COMPLETED','FAILED') THEN 1 ELSE 0 END) AS active_workflows,
               (SELECT COUNT(*) FROM agent_runs WHERE status = 'completed') AS completed_agent_runs
-            FROM projects
-        """).fetchone()
+            FROM projects WHERE workspace_id=?
+        """, (workspace["id"],)).fetchone()
         return envelope({key: int(value or 0) for key, value in dict(row).items()})
 
 
@@ -359,17 +423,19 @@ def get_project(project_id: str) -> JSONResponse:
 
 
 @app.get("/api/reviews")
-def review_inbox() -> JSONResponse:
+def review_inbox(workspace_id: str | None = None) -> JSONResponse:
     with db() as c:
-        rows = c.execute("SELECT p.public_id,p.name,p.state,p.created_at,a.reviewer,a.assigned_at FROM projects p LEFT JOIN review_assignments a ON a.project_id=p.id AND a.artifact_type=CASE WHEN p.state='BRD_AWAITING_APPROVAL' THEN 'brd' ELSE 'backlog' END WHERE p.state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL') ORDER BY p.created_at").fetchall()
+        workspace = workspace_row(c, workspace_id)
+        rows = c.execute("SELECT p.public_id,p.name,p.state,p.created_at,a.reviewer,a.assigned_at FROM projects p LEFT JOIN review_assignments a ON a.project_id=p.id AND a.artifact_type=CASE WHEN p.state='BRD_AWAITING_APPROVAL' THEN 'brd' ELSE 'backlog' END WHERE p.workspace_id=? AND p.state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL') ORDER BY p.created_at", (workspace["id"],)).fetchall()
         return envelope([{**dict(row), "artifact_type": "brd" if row["state"] == "BRD_AWAITING_APPROVAL" else "backlog"} for row in rows])
 
 
 @app.get("/api/dashboard")
-def dashboard() -> JSONResponse:
+def dashboard(workspace_id: str | None = None) -> JSONResponse:
     with db() as c:
-        counts = c.execute("SELECT COUNT(*) total, SUM(state='COMPLETED') completed, SUM(state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL')) awaiting_review, SUM(state NOT IN ('DRAFT','COMPLETED','FAILED')) active FROM projects").fetchone()
-        recent = c.execute("SELECT public_id,name,state,created_at FROM projects ORDER BY created_at DESC LIMIT 5").fetchall()
+        workspace = workspace_row(c, workspace_id)
+        counts = c.execute("SELECT COUNT(*) total, SUM(state='COMPLETED') completed, SUM(state IN ('BRD_AWAITING_APPROVAL','BACKLOG_AWAITING_APPROVAL')) awaiting_review, SUM(state NOT IN ('DRAFT','COMPLETED','FAILED')) active FROM projects WHERE workspace_id=?", (workspace["id"],)).fetchone()
+        recent = c.execute("SELECT public_id,name,state,created_at FROM projects WHERE workspace_id=? ORDER BY created_at DESC LIMIT 5", (workspace["id"],)).fetchall()
         return envelope({"metrics": {key: int(value or 0) for key, value in dict(counts).items()}, "recent": [dict(row) for row in recent]})
 
 

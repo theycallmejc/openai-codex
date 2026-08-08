@@ -10,6 +10,9 @@ let voiceStartedAt = 0;
 let voiceTimer = null;
 let libraryScreen = 'workflows';
 let pendingReview = null;
+let activeWorkspaceId = localStorage.getItem('flowpilot.active-workspace') || '';
+let workspaces = [];
+let editingWorkspaceId = null;
 
 const tabs = ['Requirement', 'Analysis', 'BRD', 'Backlog', 'Tests', 'Traceability', 'QA Handoff'];
 const stages = [
@@ -19,6 +22,7 @@ const stages = [
 const esc = x => String(x ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 
 async function api(url, body) {
+  if (activeWorkspaceId && (/^\/api\/projects$|^\/api\/workspace\/overview$|^\/api\/reviews$|^\/api\/dashboard$/).test(url)) url += `${url.includes('?') ? '&' : '?'}workspace_id=${encodeURIComponent(activeWorkspaceId)}`;
   const response = await fetch(url, {
     method: body ? 'POST' : 'GET',
     headers: body ? {'Content-Type':'application/json'} : {},
@@ -102,6 +106,8 @@ function updateRequirementCount() {
 }
 
 function workspaceIdentity() { return JSON.parse(localStorage.getItem('flowpilot.workspace') || '{}'); }
+async function loadActiveWorkspace() { workspaces = await api('/api/workspaces'); const current = workspaces.find(space => space.public_id === activeWorkspaceId) || workspaces[0]; if (current) { activeWorkspaceId = current.public_id; localStorage.setItem('flowpilot.active-workspace', activeWorkspaceId); localStorage.setItem('flowpilot.workspace', JSON.stringify({name:current.name, owner:current.owner})); applyWorkspaceIdentity(); } }
+function renderWorkspaces() { $('workspaceList').innerHTML = workspaces.map(space => `<div class="workspace-row ${space.public_id === activeWorkspaceId ? 'selected' : ''}"><button type="button" data-workspace-select="${esc(space.public_id)}"><strong>${esc(space.name)}</strong><span>${space.workflow_count} workflow${space.workflow_count === 1 ? '' : 's'}</span></button><div><button type="button" data-workspace-edit="${esc(space.public_id)}">Edit</button><button type="button" data-workspace-delete="${esc(space.public_id)}" ${space.workflow_count ? 'disabled title="Delete workflows first"' : ''}>Delete</button></div></div>`).join(''); document.querySelectorAll('[data-workspace-select]').forEach(button => button.onclick = () => { activeWorkspaceId = button.dataset.workspaceSelect; localStorage.setItem('flowpilot.active-workspace', activeWorkspaceId); loadActiveWorkspace().then(() => { $('workspaceDialog').close(); reset(); }); }); document.querySelectorAll('[data-workspace-edit]').forEach(button => button.onclick = () => { editingWorkspaceId = button.dataset.workspaceEdit; $('workspaceNameInput').value = workspaces.find(space => space.public_id === editingWorkspaceId).name; }); document.querySelectorAll('[data-workspace-delete]').forEach(button => button.onclick = async () => { if (!confirm('Delete this empty workspace?')) return; try { await api(`/api/workspaces/${button.dataset.workspaceDelete}/delete`, {}); await loadActiveWorkspace(); renderWorkspaces(); toast('Workspace deleted', 'success'); } catch (error) { toast(error.message, 'error'); } }); }
 function applyWorkspaceIdentity() { const identity = workspaceIdentity(); const owner = identity.owner || $('accountName').textContent || 'Your workspace'; const label = identity.name || 'FlowPilot'; $('workspaceBrand').textContent = label; $('ownerName').textContent = owner; $('ownerAvatar').textContent = owner.split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join('').toUpperCase() || 'FP'; }
 
 function chatReply(question) {
@@ -656,7 +662,7 @@ $('workflowForm').addEventListener('submit', async event => {
   $('clearForm').disabled = true;
   progress(0);
   try {
-    const created = await api('/api/projects', {name:raw.slice(0, 80), description:raw});
+    const created = await api('/api/projects', {name:raw.slice(0, 80), description:raw, workspace_id:activeWorkspaceId || undefined});
     progress(1);
     await api(`/api/projects/${created.public_id}/requirements`, {raw_requirement:raw});
     project = await api(`/api/projects/${created.public_id}`);
@@ -748,9 +754,14 @@ try {
   else $('accountName').textContent = user.name;
 } catch (_) { localStorage.removeItem('flowpilot.user'); window.location.replace('/'); }
 applyWorkspaceIdentity();
+loadActiveWorkspace().catch(() => {});
 $('signOut').onclick = async () => { try { await fetch('/api/auth/logout', {method:'POST'}); } finally { localStorage.removeItem('flowpilot.user'); window.location.assign('/'); } };
 $('helpOpen').onclick = () => $('helpDialog').showModal();
+$('brandHome').onclick = () => showLibrary('dashboard');
+$('workspaceOwner').onclick = async () => { try { await loadActiveWorkspace(); editingWorkspaceId = null; $('workspaceNameInput').value = ''; renderWorkspaces(); $('workspaceDialog').showModal(); } catch (error) { toast('Unable to load workspaces.', 'error'); } };
 $('settingsOpen').onclick = () => { const identity = workspaceIdentity(); $('settingsWorkspaceName').value = identity.name || 'FlowPilot'; $('settingsOwnerName').value = identity.owner || $('accountName').textContent || ''; $('settingsTheme').value = document.documentElement.dataset.theme || 'light'; $('settingsSidebar').checked = localStorage.getItem('flowpilot.sidebar-collapsed') === 'true'; $('settingsDialog').showModal(); };
 document.querySelectorAll('[data-close-dialog]').forEach(button => button.onclick = () => $(button.dataset.closeDialog).close());
 $('helpStartWorkflow').onclick = () => { $('helpDialog').close(); reset(); };
 $('settingsForm').addEventListener('submit', event => { event.preventDefault(); setTheme($('settingsTheme').value); localStorage.setItem('flowpilot.workspace', JSON.stringify({name:$('settingsWorkspaceName').value.trim() || 'FlowPilot', owner:$('settingsOwnerName').value.trim() || $('accountName').textContent || 'Your workspace'})); applyWorkspaceIdentity(); const shouldCollapse = $('settingsSidebar').checked; const isCollapsed = $('sidebar').classList.contains('collapsed'); if (shouldCollapse !== isCollapsed) $('sidebarToggle').click(); $('settingsDialog').close(); toast('Preferences saved', 'success'); });
+$('workspaceNew').onclick = () => { editingWorkspaceId = null; $('workspaceNameInput').value = ''; $('workspaceNameInput').focus(); };
+$('workspaceForm').addEventListener('submit', async event => { event.preventDefault(); const name = $('workspaceNameInput').value.trim(); try { const endpoint = editingWorkspaceId ? `/api/workspaces/${editingWorkspaceId}/update` : '/api/workspaces'; const saved = await api(endpoint, {name, owner:$('accountName').textContent || 'FlowPilot Admin'}); if (!editingWorkspaceId) activeWorkspaceId = saved.public_id; localStorage.setItem('flowpilot.active-workspace', activeWorkspaceId); await loadActiveWorkspace(); editingWorkspaceId = null; renderWorkspaces(); applyWorkspaceIdentity(); toast('Workspace saved', 'success'); } catch (error) { toast(error.message || 'Unable to save workspace.', 'error'); } });

@@ -10,7 +10,7 @@
 <body>
   <div class="app-shell" id="appShell">
     <aside class="sidebar" id="sidebar">
-      <div class="brand"><span aria-hidden="true">✦</span><strong id="workspaceBrand">FlowPilot</strong><b>BETA</b><button id="sidebarToggle" class="icon-button" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button></div>
+      <div class="brand"><button type="button" id="brandHome" class="brand-home" aria-label="Go to FlowPilot home"><span aria-hidden="true">✦</span><strong id="workspaceBrand">FlowPilot</strong><b>BETA</b></button><button id="sidebarToggle" class="icon-button" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button></div>
       <button class="primary new-workflow" id="navNew">＋ New workflow</button>
       <nav class="app-nav" aria-label="Application">
         <button data-library-view="dashboard">◈ <span>Dashboard</span></button>
@@ -94,6 +94,7 @@
   <dialog id="settingsDialog" class="next-dialog" aria-labelledby="settingsDialogTitle">
     <form id="settingsForm" class="dialog-card"><button type="button" class="dialog-close" data-close-dialog="settingsDialog" aria-label="Close">×</button><p class="eyebrow">PREFERENCES</p><h2 id="settingsDialogTitle">Workspace settings</h2><label>Workspace name<input id="settingsWorkspaceName" maxlength="40" placeholder="Your workspace"></label><label>Your display name<input id="settingsOwnerName" maxlength="60" placeholder="Your name"></label><label>Color theme<select id="settingsTheme"><option value="light">Light</option><option value="dark">Dark</option></select></label><label class="settings-check"><input id="settingsSidebar" type="checkbox"> Start with sidebar collapsed</label><p class="dialog-copy">Preferences are saved only in this browser.</p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog="settingsDialog">Cancel</button><button class="primary" type="submit">Save preferences</button></div></form>
   </dialog>
+  <dialog id="workspaceDialog" class="next-dialog" aria-labelledby="workspaceDialogTitle"><section class="dialog-card"><button type="button" class="dialog-close" data-close-dialog="workspaceDialog" aria-label="Close">×</button><p class="eyebrow">WORKSPACES</p><h2 id="workspaceDialogTitle">Your workspaces</h2><div id="workspaceList" class="workspace-list"></div><form id="workspaceForm"><label>Workspace name<input id="workspaceNameInput" maxlength="60" required placeholder="e.g. Product team"></label><div class="dialog-actions"><button type="button" class="secondary" id="workspaceNew">New</button><button class="primary" type="submit">Save workspace</button></div></form></section></dialog>
 
   <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="false"><span>✦</span><b>Ask FlowPilot</b></button>
   <section id="chatPanel" class="chat-panel" aria-label="FlowPilot assistant" hidden>
