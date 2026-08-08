@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from backend.src.requirement_intelligence import analyze_requirement
+from backend.src.orchestration import REGISTRY, execute as execute_agent, plan as build_plan
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = Path(os.getenv("SDLC_DATABASE_PATH", str(ROOT / "data" / "sdlc-framework.db")))
@@ -78,6 +79,11 @@ class ReviewCommentInput(BaseModel):
 class ReviewAssignmentInput(BaseModel):
     artifact_type: str = Field(pattern="^(brd|backlog)$")
     reviewer: str = Field(min_length=1, max_length=120)
+
+
+class AgentFeedbackInput(BaseModel):
+    useful: bool
+    reason: str = Field(default="", max_length=500)
 
 
 class AssistantInput(BaseModel):
@@ -173,6 +179,8 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS assistant_messages (id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT, created_at TEXT, FOREIGN KEY(conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS review_comments (id TEXT PRIMARY KEY, project_id INTEGER, artifact_type TEXT, author TEXT, body TEXT, created_at TEXT, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS review_assignments (project_id INTEGER, artifact_type TEXT, reviewer TEXT, assigned_at TEXT, PRIMARY KEY(project_id, artifact_type), FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+        CREATE TABLE IF NOT EXISTS orchestrator_runs (id TEXT PRIMARY KEY, project_id INTEGER, agent TEXT, status TEXT, attempt INTEGER, context_json TEXT, result_json TEXT, error TEXT, started_at TEXT, completed_at TEXT);
+        CREATE TABLE IF NOT EXISTS agent_feedback (id TEXT PRIMARY KEY, project_id INTEGER, agent TEXT, useful INTEGER, reason TEXT, created_at TEXT);
         CREATE INDEX IF NOT EXISTS idx_assistant_messages_conversation ON assistant_messages(conversation_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_review_comments_project ON review_comments(project_id, created_at);
         """)
@@ -450,6 +458,44 @@ def assign_reviewer(project_id: str, payload: ReviewAssignmentInput) -> JSONResp
         project = project_row(c, project_id)
         c.execute("INSERT INTO review_assignments(project_id,artifact_type,reviewer,assigned_at) VALUES(?,?,?,?) ON CONFLICT(project_id,artifact_type) DO UPDATE SET reviewer=excluded.reviewer,assigned_at=excluded.assigned_at", (project["id"], payload.artifact_type, payload.reviewer.strip(), now()))
         return envelope({"artifact_type": payload.artifact_type, "reviewer": payload.reviewer.strip()})
+
+
+@app.get("/api/projects/{project_id}/orchestration/plan")
+def orchestration_plan(project_id: str) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        requirement = c.execute("SELECT raw_text FROM requirements WHERE project_id=?", (project["id"],)).fetchone()
+        if not requirement:
+            raise HTTPException(409, {"code":"REQUIREMENT_REQUIRED", "message":"Capture a requirement before planning agents."})
+        return envelope({"steps": build_plan(requirement["raw_text"]), "registry": [{"name": spec.name, "purpose": spec.purpose, "tools": spec.tools, "prompt_version": spec.prompt_version} for spec in REGISTRY.values()]})
+
+
+@app.post("/api/projects/{project_id}/orchestration/{agent}/run")
+def orchestration_run(project_id: str, agent: str) -> JSONResponse:
+    if agent not in REGISTRY:
+        raise HTTPException(404, {"code":"AGENT_NOT_FOUND", "message":"This agent is not registered."})
+    with db() as c:
+        project = project_row(c, project_id)
+        requirement = c.execute("SELECT raw_text FROM requirements WHERE project_id=?", (project["id"],)).fetchone()
+        if not requirement: raise HTTPException(409, {"code":"REQUIREMENT_REQUIRED", "message":"Capture a requirement first."})
+        results = {row["agent"]: json.loads(row["result_json"]) for row in c.execute("SELECT agent,result_json FROM orchestrator_runs WHERE project_id=? AND status='completed'", (project["id"],)).fetchall() if row["result_json"]}
+        context = {"workflow_id": project_id, "requirement": requirement["raw_text"][:MAX_REQUIREMENT_LENGTH], "results": results}
+        run_id = str(uuid.uuid4()); c.execute("INSERT INTO orchestrator_runs(id,project_id,agent,status,attempt,context_json,started_at) VALUES(?,?,?,?,?,?,?)", (run_id, project["id"], agent, "running", 1, json.dumps({"workflow_id":project_id,"result_agents":list(results)}), now()))
+        try:
+            result = execute_agent(agent, context)
+            c.execute("UPDATE orchestrator_runs SET status='completed',result_json=?,completed_at=? WHERE id=?", (json.dumps(result), now(), run_id))
+            return envelope({"run_id":run_id,"agent":agent,"status":"completed","result":result,"prompt_version":REGISTRY[agent].prompt_version})
+        except ValueError as exc:
+            c.execute("UPDATE orchestrator_runs SET status='failed',error=?,completed_at=? WHERE id=?", (str(exc), now(), run_id))
+            raise HTTPException(422, {"code":"AGENT_VALIDATION_FAILED", "message":"The agent output was invalid. You can retry safely."})
+
+
+@app.post("/api/projects/{project_id}/orchestration/{agent}/feedback")
+def agent_feedback(project_id: str, agent: str, payload: AgentFeedbackInput) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        c.execute("INSERT INTO agent_feedback(id,project_id,agent,useful,reason,created_at) VALUES(?,?,?,?,?,?)", (str(uuid.uuid4()), project["id"], agent, int(payload.useful), payload.reason.strip(), now()))
+        return envelope({"recorded": True})
 
 
 @app.post("/api/projects/{project_id}/comments")
