@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260808-voice-input">
+  <link rel="stylesheet" href="/static/styles.css?v=20260808-workspace-library">
 </head>
 <body>
   <div class="app-shell">
@@ -13,10 +13,10 @@
       <div class="brand"><span aria-hidden="true">✦</span><strong>FlowPilot</strong><b>BETA</b><button id="sidebarToggle" class="icon-button" aria-label="Collapse sidebar" title="Collapse sidebar">‹</button></div>
       <button class="primary new-workflow" id="navNew">＋ New workflow</button>
       <nav class="app-nav" aria-label="Application">
-        <button class="active">▣ <span>Workflows</span></button>
-        <button>⌁ <span>Traceability</span></button>
-        <button>✓ <span>QA handoffs</span></button>
-        <button>◷ <span>Audit history</span></button>
+        <button class="active" data-library-view="workflows">▣ <span>Workflows</span></button>
+        <button data-library-view="traceability">⌁ <span>Traceability</span></button>
+        <button data-library-view="handoffs">✓ <span>QA handoffs</span></button>
+        <button data-library-view="audit">◷ <span>Audit history</span></button>
       </nav>
       <div id="sidebarWorkflows"></div>
       <div class="sidebar-bottom">
@@ -55,6 +55,7 @@
       </section>
 
       <section id="workspaceView" hidden></section>
+      <section id="libraryView" class="library-view" hidden></section>
     </main>
   </div>
 
@@ -89,6 +90,6 @@
   </section>
 
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=20260808-voice-input"></script>
+  <script src="/static/app.js?v=20260808-workspace-library"></script>
 </body>
 </html>

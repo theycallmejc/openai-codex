@@ -244,6 +244,13 @@ def create_project(payload: ProjectInput) -> JSONResponse:
         return envelope({"public_id": project_id, "state": "DRAFT"}, 201)
 
 
+@app.get("/api/projects")
+def list_projects() -> JSONResponse:
+    with db() as c:
+        rows = c.execute("SELECT public_id,name,description,state,created_at FROM projects ORDER BY id DESC").fetchall()
+        return envelope([dict(row) for row in rows])
+
+
 @app.get("/api/projects/{project_id}")
 def get_project(project_id: str) -> JSONResponse:
     with db() as c:

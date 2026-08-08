@@ -8,6 +8,7 @@ let voiceRecognition = null;
 let voiceTarget = null;
 let voiceStartedAt = 0;
 let voiceTimer = null;
+let libraryScreen = 'workflows';
 
 const tabs = ['Requirement', 'Analysis', 'BRD', 'Backlog', 'Tests', 'Traceability', 'QA Handoff'];
 const stages = [
@@ -400,12 +401,56 @@ function activitySummary() {
 
 function metric(value) { return value === null ? '—' : esc(value); }
 
+function setActiveNavigation(screen) {
+  document.querySelectorAll('[data-library-view]').forEach(button => button.classList.toggle('active', button.dataset.libraryView === screen));
+}
+
+function stateLabel(state) { return String(state || 'DRAFT').replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, char => char.toUpperCase()); }
+
+async function showLibrary(screen = 'workflows') {
+  libraryScreen = screen;
+  setActiveNavigation(screen);
+  $('creationView').hidden = true; $('workspaceView').hidden = true; $('libraryView').hidden = false;
+  $('crumb').textContent = screen === 'workflows' ? 'Workflow library' : stateLabel(screen);
+  $('libraryView').innerHTML = `<div class="library-loading">Loading ${esc(screen)}…</div>`;
+  try {
+    const summaries = await api('/api/projects');
+    const projects = await Promise.all(summaries.map(item => api(`/api/projects/${item.public_id}`)));
+    renderLibrary(screen, projects);
+  } catch (error) {
+    $('libraryView').innerHTML = `<section class="empty-library"><h1>Unable to load this view</h1><p>${esc(error.message)}</p><button class="primary" data-library-retry>Try again</button></section>`;
+    document.querySelector('[data-library-retry]').onclick = () => showLibrary(screen);
+  }
+}
+
+function renderLibrary(screen, projects) {
+  const completed = projects.filter(item => item.state === 'COMPLETED');
+  const withTraceability = projects.filter(item => item.artifacts?.traceability?.valid);
+  const auditEvents = projects.flatMap(item => (item.audit_events || []).map(event => ({...event, project:item}))).sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  let body = '';
+  if (screen === 'workflows') {
+    body = projects.length ? `<div class="library-grid">${projects.map(item => `<button class="workflow-library-card" data-open-project="${esc(item.public_id)}"><div><span class="library-kicker">${esc(item.public_id)}</span><h2>${esc(item.name)}</h2><p>${esc(item.description || 'No requirement captured yet.')}</p></div><div class="library-card-foot"><span class="state-pill ${item.state === 'COMPLETED' ? 'done' : ''}">${esc(stateLabel(item.state))}</span><span>${time(item.created_at)}</span></div></button>`).join('')}</div>` : `<section class="empty-library"><h1>Start your first workflow</h1><p>Capture a requirement to create traceable QA evidence.</p><button class="primary" data-library-new>New workflow <i>→</i></button></section>`;
+  } else if (screen === 'traceability') {
+    body = withTraceability.length ? `<div class="library-grid">${withTraceability.map(item => { const trace = item.artifacts.traceability; return `<button class="workflow-library-card trace-card" data-open-project="${esc(item.public_id)}"><div><span class="library-kicker">${esc(item.public_id)} · TRACEABILITY</span><h2>${esc(item.name)}</h2><p>${trace.criteria_count} criteria linked to ${trace.test_count} tests.</p></div><div class="trace-meter"><b>${esc(trace.coverage || 'Validated')}</b><span>Coverage</span></div></button>`; }).join('')}</div>` : `<section class="empty-library"><h1>No validated traceability yet</h1><p>Complete the workflow through test generation to see requirement-to-test coverage here.</p></section>`;
+  } else if (screen === 'handoffs') {
+    body = completed.length ? `<div class="library-grid">${completed.map(item => `<button class="workflow-library-card handoff-card" data-open-project="${esc(item.public_id)}"><div><span class="library-kicker">QA HANDOFF · READY</span><h2>${esc(item.name)}</h2><p>Approved evidence package ready for QA review.</p></div><span class="handoff-arrow">→</span></button>`).join('')}</div>` : `<section class="empty-library"><h1>No QA handoffs ready</h1><p>Completed workflows will appear here as shareable QA packages.</p></section>`;
+  } else {
+    body = auditEvents.length ? `<section class="event-feed">${auditEvents.map(event => `<button class="event-row" data-open-project="${esc(event.project.public_id)}"><b>${event.action.includes('rejected') ? '!' : '✓'}</b><div><strong>${esc(event.action.replaceAll('_', ' '))}</strong><span>${esc(event.project.name)} · ${esc(event.actor || 'System')} · ${time(event.timestamp)}</span></div><em>${esc(event.project.public_id)}</em></button>`).join('')}</section>` : `<section class="empty-library"><h1>No recorded activity</h1><p>Workflow decisions and agent handoffs will appear here.</p></section>`;
+  }
+  const title = {workflows:'Workflow library', traceability:'Traceability center', handoffs:'QA handoffs', audit:'Audit history'}[screen];
+  $('libraryView').innerHTML = `<header class="library-header"><div><p>FLOWPILOT WORKSPACE</p><h1>${title}</h1><span>${screen === 'workflows' ? `${projects.length} workflow${projects.length === 1 ? '' : 's'} in your local workspace` : 'A focused view of your governed delivery evidence.'}</span></div>${screen === 'workflows' ? '<button class="primary" data-library-new>New workflow <i>→</i></button>' : ''}</header>${body}`;
+  document.querySelectorAll('[data-open-project]').forEach(button => button.onclick = async () => { project = await api(`/api/projects/${button.dataset.openProject}`); view = 'Requirement'; render(); });
+  document.querySelectorAll('[data-library-new]').forEach(button => button.onclick = () => reset());
+}
+
 function render() {
   const vm = buildViewModel(project, view);
   view = vm.selectedArtifact;
   remember(project);
   $('creationView').hidden = true;
   $('workspaceView').hidden = false;
+  $('libraryView').hidden = true;
+  setActiveNavigation('workflows');
   $('crumb').textContent = project.public_id;
   status(vm.qaReadiness === 'Ready' ? 'Ready' : vm.workflowState.includes('AWAITING') ? 'Awaiting review' : 'Workflow active');
   sidebar(vm);
@@ -517,6 +562,7 @@ function reset(prefill = '') {
   project = null;
   view = 'Requirement';
   $('workspaceView').hidden = true;
+  $('libraryView').hidden = true;
   $('creationView').hidden = false;
   $('requirement').value = prefill;
   updateRequirementCount();
@@ -592,6 +638,7 @@ $('sidebarToggle').onclick = () => { const collapsed = $('sidebar').classList.to
 setTheme(localStorage.getItem('flowpilot.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 if (localStorage.getItem('flowpilot.sidebar-collapsed') === 'true') $('sidebarToggle').click();
 $('navNew').onclick = () => reset();
+document.querySelectorAll('[data-library-view]').forEach(button => button.onclick = () => showLibrary(button.dataset.libraryView));
 $('requirement').addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') $('workflowForm').requestSubmit(); });
 $('startNextScenario').onclick = () => {
   const selected = samples[$('nextScenarioSelect').value];

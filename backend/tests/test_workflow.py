@@ -33,6 +33,13 @@ def test_duplicate_and_missing_requirement_are_rejected(tmp_path,monkeypatch):
     assert c.post(f"/api/projects/{p}/workflow/run").status_code==200
 
 
+def test_projects_library_lists_created_workflows(tmp_path,monkeypatch):
+    c=client(tmp_path,monkeypatch); p=create(c)
+    response=c.get("/api/projects")
+    assert response.status_code==200
+    assert response.json()["data"][0]["public_id"]==p
+
+
 def test_project_assistant_returns_contextual_workflow_guidance(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch); p=create(c)
     c.post(f"/api/projects/{p}/requirements",json={"raw_requirement":"Users can save a shopping list."})
