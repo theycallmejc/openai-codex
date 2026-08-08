@@ -15,6 +15,7 @@ let workspaces = [];
 let editingWorkspaceId = null;
 let requirementIntelligence = null;
 let lastChatQuestion = '';
+let commandSelection = 0;
 
 const tabs = ['Requirement', 'Analysis', 'BRD', 'Backlog', 'Tests', 'Traceability', 'QA Handoff'];
 const stages = [
@@ -1044,15 +1045,40 @@ $('applyAiSuggestion').onclick = () => {
   toast('Selected additions were appended for your review.', 'success');
 };
 
-function openCommandPalette() { $('commandDialog').showModal(); $('commandSearch').value = ''; $('commandSearch').focus(); document.querySelectorAll('[data-command]').forEach(button => button.hidden = false); }
-function runCommand(command) {
-  $('commandDialog').close();
-  if (command === 'improve') { if (!$('creationView').hidden) $('aiImprove').click(); else { reset(); $('requirement').focus(); toast('Add a requirement, then choose Improve requirement.', 'info'); } }
-  if (command === 'coverage') { toggleChat(true); askChat('Show my current coverage'); }
-  if (command === 'workflow') { toggleChat(true); askChat('Explain this workflow'); }
+function availableCommands() {
+  const items = [
+    ['new', 'New Workflow', 'Start a requirement', 'navigation'], ['workflows', 'Workflows', 'Open workflow library', 'navigation'], ['traceability', 'Traceability', 'Inspect requirement-to-test links', 'navigation'], ['handoffs', 'QA Handoffs', 'Open ready QA packages', 'navigation'], ['audit', 'Audit History', 'Open recorded workflow decisions', 'navigation']
+  ];
+  if (!$('creationView').hidden) items.push(['improve', 'Improve requirement', 'Analyze the current requirement', 'AI action'], ['acceptance', 'Generate acceptance criteria', 'Insert an editable Given / When / Then template', 'AI action'], ['edge', 'Find edge cases', 'Insert an editable edge-case template', 'AI action']);
+  if (project?.state !== 'DRAFT' && project) items.push(['risk', 'Analyze risk', 'Run the persisted agent workflow', 'AI action']);
+  if (project?.state === 'BACKLOG_APPROVED') items.push(['missing-tests', 'Generate missing tests', 'Run the next QA test-generation step', 'AI action']);
+  if (project?.artifacts?.tests) items.push(['coverage', 'Review coverage', 'Run the targeted Review Agent', 'AI action']);
+  if (project) items.push(['summary', 'Summarize workflow', 'Ask the scoped copilot for a summary', 'AI action']);
+  return items;
 }
-$('commandSearch').addEventListener('input', event => { const query = event.target.value.toLowerCase(); document.querySelectorAll('[data-command]').forEach(button => { button.hidden = !button.textContent.toLowerCase().includes(query); }); });
-document.querySelectorAll('[data-command]').forEach(button => button.onclick = () => runCommand(button.dataset.command));
+function renderCommandList(query = '') {
+  const matches = availableCommands().filter(item => item.slice(1).join(' ').toLowerCase().includes(query.toLowerCase()));
+  commandSelection = Math.min(commandSelection, Math.max(0, matches.length - 1));
+  $('commandList').innerHTML = matches.map((item, index) => `<button data-command="${item[0]}" class="${index === commandSelection ? 'selected' : ''}"><span>${esc(item[1])}</span><small>${esc(item[3])} · ${esc(item[2])}</small></button>`).join('') || '<p class="empty-copy">No valid commands for this context.</p>';
+  document.querySelectorAll('[data-command]').forEach(button => button.onclick = () => runCommand(button.dataset.command));
+}
+function openCommandPalette() { commandSelection = 0; $('commandDialog').showModal(); $('commandSearch').value = ''; renderCommandList(); $('commandSearch').focus(); }
+async function runCommand(command) {
+  $('commandDialog').close();
+  try {
+  if (command === 'new') return reset();
+  if (['workflows', 'traceability', 'handoffs', 'audit'].includes(command)) return showLibrary(command);
+  if (command === 'improve') return $('aiImprove').click();
+  if (command === 'acceptance') return document.querySelector('[data-prompt="Acceptance criteria"]')?.click();
+  if (command === 'edge') return document.querySelector('[data-prompt="Edge cases"]')?.click();
+  if (command === 'risk') { await api(`/api/projects/${project.public_id}/orchestration/run-all`, {}); project = await api(`/api/projects/${project.public_id}`); render(); return toast('Agent workflow completed', 'success'); }
+  if (command === 'missing-tests') return run('tests/generate');
+  if (command === 'coverage') { await api(`/api/projects/${project.public_id}/review/run`, {}); project = await api(`/api/projects/${project.public_id}`); view = 'Tests'; render(); return toast('Coverage review completed', 'success'); }
+  if (command === 'summary') { toggleChat(true); return askChat('Summarize workflow'); }
+  } catch (error) { toast(error.message || 'This command could not be completed.', 'error'); }
+}
+$('commandSearch').addEventListener('input', event => { commandSelection = 0; renderCommandList(event.target.value); });
+$('commandSearch').addEventListener('keydown', event => { const commands = [...document.querySelectorAll('[data-command]')]; if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && commands.length) { event.preventDefault(); commandSelection = (commandSelection + (event.key === 'ArrowDown' ? 1 : -1) + commands.length) % commands.length; renderCommandList($('commandSearch').value); } if (event.key === 'Enter' && commands[commandSelection]) { event.preventDefault(); runCommand(commands[commandSelection].dataset.command); } if (event.key === 'Escape') $('commandDialog').close(); });
 document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); event.stopImmediatePropagation(); openCommandPalette(); } }, true);
 
 initPointerGlow();
