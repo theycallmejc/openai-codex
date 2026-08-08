@@ -501,6 +501,7 @@ function render() {
 
     <div class="workspace-layout">
       <section class="workspace-main">
+        <section class="audit orchestration-panel"><div class="orchestration-head"><div><p>FLOWPILOT ORCHESTRATION</p><h2>Agent plan</h2></div><button class="secondary" data-load-plan>Load plan</button></div><div id="orchestrationPlan" class="empty-copy">Load the plan to see the approved specialized agents for this workflow.</div></section>
         <nav class="artifact-tabs" aria-label="Artifacts">${tabs.map(x => `<button data-artifact="${x}" class="${view === x ? 'selected' : ''}" ${vm.available[x] ? '' : 'disabled'}>${x}</button>`).join('')}</nav>
         <article class="artifact-view">${artifact(vm)}</article>
         <section class="audit">${auditSummary()}</section>
@@ -548,7 +549,16 @@ function bindWorkspace(vm) {
   document.querySelectorAll('[data-next-scenario]').forEach(button => button.onclick = openNextScenario);
   $('commentForm')?.addEventListener('submit', async event => { event.preventDefault(); try { await api(`/api/projects/${project.public_id}/comments`, {artifact_type:view.toLowerCase().replace(' ', '_'), author:$('commentAuthor').value.trim(), body:$('commentBody').value.trim()}); project = await api(`/api/projects/${project.public_id}`); render(); toast('Comment added', 'success'); } catch (error) { toast(error.message || 'Unable to add comment.', 'error'); } });
   $('assignmentForm')?.addEventListener('submit', async event => { event.preventDefault(); const artifactType = project.state === 'BRD_AWAITING_APPROVAL' ? 'brd' : 'backlog'; try { await api(`/api/projects/${project.public_id}/review-assignment`, {artifact_type:artifactType, reviewer:$('assignmentReviewer').value.trim()}); project = await api(`/api/projects/${project.public_id}`); render(); toast('Reviewer assigned', 'success'); } catch (error) { toast(error.message || 'Unable to save assignment.', 'error'); } });
+  document.querySelector('[data-load-plan]')?.addEventListener('click', loadOrchestrationPlan);
 }
+
+async function loadOrchestrationPlan() {
+  const target = $('orchestrationPlan'); if (!target || !project) return;
+  target.textContent = 'Loading approved agent plan…';
+  try { const plan = await api(`/api/projects/${project.public_id}/orchestration/plan`); target.innerHTML = `<div class="agent-plan">${plan.steps.map((step, index) => `<article><b>${String(index + 1).padStart(2,'0')}</b><div><strong>${esc(step.agent)} agent</strong><span>${esc(step.goal)}</span></div><button class="secondary" data-run-agent="${esc(step.agent)}">Run</button></article>`).join('')}</div>`; document.querySelectorAll('[data-run-agent]').forEach(button => button.onclick = () => runOrchestrationAgent(button.dataset.runAgent)); } catch (error) { target.textContent = error.message || 'Unable to load the agent plan.'; }
+}
+
+async function runOrchestrationAgent(agent) { const target = $('orchestrationPlan'); try { target.textContent = `Running ${agent} agent…`; const result = await api(`/api/projects/${project.public_id}/orchestration/${agent}/run`, {}); target.innerHTML = `<section class="agent-result"><strong>${esc(agent)} agent completed</strong><pre>${esc(JSON.stringify(result.result, null, 2))}</pre><div><button class="secondary" data-agent-feedback="true">Useful</button><button class="secondary" data-agent-feedback="false">Not useful</button></div></section>`; document.querySelectorAll('[data-agent-feedback]').forEach(button => button.onclick = async () => { await api(`/api/projects/${project.public_id}/orchestration/${agent}/feedback`, {useful:button.dataset.agentFeedback === 'true'}); toast('Feedback recorded', 'success'); }); } catch (error) { target.textContent = error.message || `Unable to run ${agent} agent.`; } }
 
 function copySummary(vm) {
   const text = `FlowPilot QA Handoff\nProject: ${project.public_id}\nStatus: ${vm.qaReadiness}\nRequirements: ${vm.coverage.requirements ?? 'Unavailable'}\nStories: ${vm.coverage.stories ?? 'Unavailable'}\nTests: ${vm.coverage.tests ?? 'Unavailable'}\nTraceability: ${vm.coverage.traceability ?? 'Unavailable'}`;
