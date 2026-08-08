@@ -574,6 +574,32 @@ async function runAllOrchestrationAgents() {
   finally { if (button) button.disabled = false; }
 }
 
+function agentReport(agent, result) {
+  if (agent === 'requirement') {
+    const missing = (result.dimensions || []).filter(item => item.status !== 'Good').map(item => item.dimension);
+    const score = result.overall ?? result.score ?? '—';
+    return `<section class="agent-result"><p>REQUIREMENT REVIEW</p><h3>Requirement quality: ${esc(score)}</h3><strong>${missing.length ? 'Add the missing details before implementation.' : 'The requirement has the expected detail.'}</strong>${missing.length ? `<ul>${missing.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}</section>`;
+  }
+  if (agent === 'risk') {
+    const risks = result.risks || [];
+    return `<section class="agent-result"><p>RISK REVIEW</p><h3>${risks.length ? `${risks.length} risk${risks.length === 1 ? '' : 's'} need attention` : 'No specific risk signals found'}</h3>${risks.length ? `<ul>${risks.map(risk => `<li><strong>${esc(risk.severity)}:</strong> ${esc(risk.risk)}<span>${esc(risk.mitigation)}</span></li>`).join('')}</ul>` : '<span>Continue with normal review; add product-specific risks if needed.</span>'}</section>`;
+  }
+  const findings = result.findings || [];
+  return `<section class="agent-result"><p>READINESS REVIEW</p><h3>${esc(result.status || 'Review complete')}</h3>${findings.length ? `<strong>Resolve these gaps with a reviewer:</strong><ul>${findings.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '<span>The agent found no missing requirement dimensions. Human approval is still required at the workflow gates.</span>'}</section>`;
+}
+
+async function runOrchestrationAgent(agent) {
+  const target = $('orchestrationPlan');
+  try {
+    target.textContent = `Running ${agent} agent…`;
+    const run = await api(`/api/projects/${project.public_id}/orchestration/${agent}/run`, {});
+    target.innerHTML = `${agentReport(agent, run.result)}<div class="agent-feedback"><span>Was this review useful?</span><button class="secondary" data-agent-feedback="true">Useful</button><button class="secondary" data-agent-feedback="false">Not useful</button><button class="secondary" data-load-plan>Back to agent plan</button></div>`;
+    document.querySelectorAll('[data-agent-feedback]').forEach(button => button.onclick = async () => { await api(`/api/projects/${project.public_id}/orchestration/${agent}/feedback`, {useful: button.dataset.agentFeedback === 'true'}); toast('Feedback recorded', 'success'); });
+    document.querySelector('[data-load-plan]')?.addEventListener('click', loadOrchestrationPlan);
+    toast(`${agent} agent completed`, 'success');
+  } catch (error) { target.textContent = error.message || `Unable to run ${agent} agent.`; }
+}
+
 function copySummary(vm) {
   const text = `FlowPilot QA Handoff\nProject: ${project.public_id}\nStatus: ${vm.qaReadiness}\nRequirements: ${vm.coverage.requirements ?? 'Unavailable'}\nStories: ${vm.coverage.stories ?? 'Unavailable'}\nTests: ${vm.coverage.tests ?? 'Unavailable'}\nTraceability: ${vm.coverage.traceability ?? 'Unavailable'}`;
   navigator.clipboard?.writeText(text).then(() => status('Summary copied'));
