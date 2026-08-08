@@ -29,6 +29,11 @@ def test_agents_progress_one_stage_at_a_time_with_approval_gates(tmp_path,monkey
     assert data["artifacts"]["qa_handoff"]["status"]=="ready"
     case = data["artifacts"]["tests"]["test_cases"][0]
     assert {"title", "category", "preconditions", "steps", "expected_result", "coverage", "source_acceptance_criterion", "generated_by"} <= set(case)
+    review = c.post(f"/api/projects/{p}/review/run")
+    assert review.status_code == 200
+    assert review.json()["data"]["generated_by"] == "Review Agent"
+    reviewed = c.get(f"/api/projects/{p}").json()["data"]["artifacts"]["ai_review"]
+    assert reviewed["version"] == 1
 
 def test_duplicate_and_missing_requirement_are_rejected(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch); p=create(c); payload={"raw_requirement":"Users can export reports to CSV."}

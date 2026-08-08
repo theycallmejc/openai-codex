@@ -86,6 +86,10 @@ class AgentFeedbackInput(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
+class ReviewRemediationInput(BaseModel):
+    finding_id: str = Field(min_length=1, max_length=120)
+
+
 class AssistantInput(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     conversation_id: str | None = Field(default=None, max_length=64)
@@ -303,7 +307,7 @@ def run_pipeline(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, Any]:
 
 
 def project_payload(c: sqlite3.Connection, project: sqlite3.Row) -> dict[str, Any]:
-    keys = ["analysis", "brd", "backlog", "tests", "traceability", "qa_handoff"]
+    keys = ["analysis", "brd", "backlog", "tests", "traceability", "qa_handoff", "ai_review"]
     audit_rows = c.execute("SELECT * FROM workflow_audit_events WHERE project_id = ? ORDER BY id", (project["id"],)).fetchall()
     history = c.execute("SELECT artifact_type,version,workflow_stage,approval_state,created_at FROM artifact_revisions WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
     runs = c.execute("SELECT run_id,agent,status,input_artifact,output_artifact,started_at,completed_at,error FROM agent_runs WHERE project_id=? ORDER BY id", (project["id"],)).fetchall()
@@ -548,6 +552,83 @@ def agent_feedback(project_id: str, agent: str, payload: AgentFeedbackInput) -> 
         project = project_row(c, project_id)
         c.execute("INSERT INTO agent_feedback(id,project_id,agent,useful,reason,created_at) VALUES(?,?,?,?,?,?)", (str(uuid.uuid4()), project["id"], agent, int(payload.useful), payload.reason.strip(), now()))
         return envelope({"recorded": True})
+
+
+def inspect_generated_outputs(backlog: dict[str, Any], tests: dict[str, Any], traceability: dict[str, Any] | None, requirement: str) -> list[dict[str, Any]]:
+    criteria = {criterion["id"]: criterion for story in backlog.get("stories", []) for criterion in story.get("acceptance_criteria", [])}
+    test_cases = tests.get("test_cases", [])
+    findings: list[dict[str, Any]] = []
+    by_criterion: dict[str, list[dict[str, Any]]] = {}
+    for case in test_cases:
+        criterion_id = case.get("source_acceptance_criterion") or case.get("criterion_id")
+        if criterion_id:
+            by_criterion.setdefault(criterion_id, []).append(case)
+        expected = str(case.get("expected_result", "")).strip().lower()
+        if expected in {"", "system works correctly", "works correctly", "success"}:
+            findings.append({"id": f"weak-expected-{case.get('id')}", "category":"Weak expected result", "severity":"Medium", "title":f"{case.get('id', 'Test case')} has a vague expected result", "detail":"The expected result does not describe an observable outcome.", "target":case.get("id"), "remediation":"Improve expected result"})
+    for criterion_id in criteria:
+        linked = by_criterion.get(criterion_id, [])
+        if not linked:
+            findings.append({"id":f"coverage-{criterion_id}", "category":"Coverage gap", "severity":"High", "title":f"{criterion_id} has no linked test", "detail":"No generated test currently covers this acceptance criterion.", "target":criterion_id, "remediation":"Generate missing test"})
+        elif not any(str(case.get("category") or case.get("type", "")).lower() == "negative" for case in linked):
+            findings.append({"id":f"negative-{criterion_id}", "category":"Missing negative path", "severity":"Medium", "title":f"{criterion_id} has no negative-path test", "detail":"The criterion is covered, but invalid or rejected input is not tested.", "target":criterion_id, "remediation":"Generate missing negative test"})
+        seen: set[tuple[str, str]] = set()
+        for case in linked:
+            key = (str(case.get("category") or case.get("type", "")).lower(), str(case.get("expected_result", "")).lower())
+            if key in seen:
+                findings.append({"id":f"duplicate-{case.get('id')}", "category":"Duplicate scenario", "severity":"Low", "title":f"{case.get('id')} duplicates a scenario for {criterion_id}", "detail":"Two tests have the same category and expected result for the same criterion.", "target":case.get("id"), "remediation":"Compare tests"})
+            seen.add(key)
+    for case in test_cases:
+        criterion_id = case.get("source_acceptance_criterion") or case.get("criterion_id")
+        if criterion_id and criterion_id not in criteria:
+            findings.append({"id":f"orphan-{case.get('id')}", "category":"Orphan traceability link", "severity":"High", "title":f"{case.get('id')} points to an unknown criterion", "detail":"The test references an acceptance criterion that is not present in the current backlog.", "target":case.get("id"), "remediation":"Review traceability"})
+    sensitive = any(term in requirement.lower() for term in ("password", "token", "permission", "secure", "payment", "privacy"))
+    if sensitive and not any("security" in (str(case.get("title", "")) + str(case.get("expected_result", ""))).lower() for case in test_cases):
+        findings.append({"id":"security-sensitive-tests", "category":"Missing security-sensitive test", "severity":"High", "title":"Security-sensitive requirement has no explicit security test", "detail":"The requirement contains security signals, but no test explicitly validates them.", "target":"requirement", "remediation":"Add security test"})
+    if traceability and not traceability.get("valid"):
+        findings.append({"id":"traceability-invalid", "category":"Orphan traceability link", "severity":"High", "title":"Traceability validation is incomplete", "detail":"The traceability artifact has unresolved links.", "target":"traceability", "remediation":"Review traceability"})
+    return findings
+
+
+@app.post("/api/projects/{project_id}/review/run")
+def review_generated_outputs(project_id: str) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        backlog, _ = latest_revision(c, project, "backlog")
+        tests, _ = latest_revision(c, project, "tests")
+        requirement = c.execute("SELECT raw_text FROM requirements WHERE project_id=?", (project["id"],)).fetchone()
+        if not backlog or not tests or not requirement:
+            raise HTTPException(409, {"code":"GENERATED_OUTPUTS_REQUIRED", "message":"Generate backlog and tests before running the artifact review."})
+        traceability, _ = latest_revision(c, project, "traceability")
+        findings = inspect_generated_outputs(backlog, tests, traceability, requirement["raw_text"])
+        payload = {"status":"Needs changes" if findings else "Reviewed", "findings":findings, "reviewed_artifacts":{"backlog_version": backlog.get("version"), "tests_version": tests.get("version"), "traceability_version": traceability.get("version") if traceability else None}, "generated_by":"Review Agent"}
+        version = revision(c, project, "ai_review", "AI_REVIEW_COMPLETED", payload, "PENDING")
+        return envelope({**payload, "version":version})
+
+
+@app.post("/api/projects/{project_id}/review/remediate")
+def remediate_review_finding(project_id: str, payload: ReviewRemediationInput) -> JSONResponse:
+    with db() as c:
+        project = project_row(c, project_id)
+        review, _ = latest_revision(c, project, "ai_review")
+        tests, tests_row = latest_revision(c, project, "tests")
+        if not review or not tests:
+            raise HTTPException(409, {"code":"REVIEW_REQUIRED", "message":"Run the artifact review before applying a targeted remediation."})
+        finding = next((item for item in review.get("findings", []) if item.get("id") == payload.finding_id), None)
+        if not finding:
+            raise HTTPException(404, {"code":"FINDING_NOT_FOUND", "message":"This review finding is not available in the latest review."})
+        updated_cases = list(tests.get("test_cases", []))
+        if finding["id"].startswith("negative-"):
+            criterion_id = finding["target"]
+            updated_cases.append({"id":f"TC-{len(updated_cases)+1:03d}","title":f"Negative path for {criterion_id}","category":"Negative","type":"negative","preconditions":["An approved backlog story is available."],"steps":[f"Prepare invalid input for {criterion_id}.", "Submit the requested action.", "Observe the rejection response."],"expected_result":"Invalid input is rejected safely with a clear error.","coverage":"Covered","criterion_id":criterion_id,"source_acceptance_criterion":criterion_id,"generated_by":"Review Agent"})
+        elif finding["id"].startswith("weak-expected-"):
+            target = finding["target"]
+            updated_cases = [{**case, "expected_result":"The system produces the documented outcome and records the result for review."} if case.get("id") == target else case for case in updated_cases]
+        else:
+            raise HTTPException(409, {"code":"MANUAL_REMEDIATION_REQUIRED", "message":"This finding requires human review; no safe targeted change is available."})
+        new_tests = {**tests, "test_cases":updated_cases, "review_remediation":finding["id"], "generated_by":"Review Agent"}
+        version = revision(c, project, "tests", project["state"], new_tests, tests_row["approval_state"])
+        return envelope({"remediated":finding["id"], "tests_version":version, "message":"A new test-artifact version was created; prior versions remain unchanged."})
 
 
 @app.post("/api/projects/{project_id}/comments")
