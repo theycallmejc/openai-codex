@@ -21,14 +21,26 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn backend.src.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://127.0.0.1:8000. Choose a scenario from **Load test scenario**, create the workflow, then run the visible next agent. Use **Run automation until approval** to continue automatically until a BRD or backlog approval is required.
+Open http://127.0.0.1:8000 to sign in, then FlowPilot redirects to the workspace at `/app`.
+
+### Local sign-in
+
+This local MVP includes a development sign-in gate. Use the prefilled demo account:
+
+- Email: `admin@flowpilot.local`
+- Password: `flowpilot`
+
+After signing in, choose a scenario from **Load sample**, create the workflow, then run the visible next agent. Use **Run until approval** to continue automatically until a BRD or backlog approval is required. Use the sign-out control in the top bar to return to the login screen.
 
 ## API
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/api/health` | Service health |
+| POST | `/api/auth/login` | Validate the local demo account and return its workspace profile |
 | GET | `/api/samples` | Built-in test scenarios |
+| GET | `/api/projects` | Workflow library summaries |
+| GET | `/api/workspace/overview` | Workspace-level workflow and agent-run metrics |
 | POST | `/api/projects` | Create a workflow |
 | POST | `/api/projects/{id}/requirements` | Save the input requirement |
 | POST | `/api/projects/{id}/analysis/generate` | Run Analysis agent |
@@ -51,10 +63,13 @@ python -m pytest backend\tests --cov=backend.src --cov-fail-under=70 -q
 python scripts\demo.py
 ```
 
+Interactive API documentation is available at http://127.0.0.1:8000/docs.
+
 The demo emits machine-readable evidence of the complete staged workflow, including agent-run input/output handoffs.
 
 ## Current boundaries
 
-- Local single-user application
+- Local single-user application with a development-only browser sign-in gate
 - Deterministic artifact generation; no runtime LLM provider is configured
+- Login is not production authentication: workflow APIs are not yet protected by server-side session middleware
 - No external connectors or deployed scheduler yet
