@@ -1,6 +1,7 @@
 fastapi==0.140.0
 uvicorn==0.41.0
 pydantic==2.12.5
+itsdangerous==2.2.0
 pytest==9.0.3
 httpx==0.28.1
 pytest-cov==7.0.0
