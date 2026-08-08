@@ -28,7 +28,7 @@ Reports record run ID, suite and prompt version, model label, evaluator/agent, t
 
 ## Current baseline
 
-The current baseline has known failures for RBAC and file-upload risk detection. Treat these as measurable backlog items, not silently accepted output quality.
+The current `deterministic-risk-v2` baseline passes all 8 curated core cases. Compared with the earlier baseline, RBAC and file-upload risk detection improved and no curated-case regression was reported. This result applies only to this suite; it is not a claim of general AI quality beyond the measured cases.
 
 ## Future evaluation work
 

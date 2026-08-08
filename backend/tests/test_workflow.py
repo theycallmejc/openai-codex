@@ -1,5 +1,6 @@
 import importlib
 from fastapi.testclient import TestClient
+from backend.src.orchestration import execute
 
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("SDLC_DATABASE_PATH", str(tmp_path / "test.db"))
@@ -10,6 +11,12 @@ def client(tmp_path, monkeypatch):
     return test_client
 
 def create(c): return c.post("/api/projects",json={"name":"Automated"}).json()["data"]["public_id"]
+
+def test_risk_agent_flags_permission_and_secure_file_upload_controls():
+    rbac = execute("risk", {"requirement": "An administrator assigns roles and permission checks protect every action."})
+    upload = execute("risk", {"requirement": "A signed-in user uploads a file that must be stored securely."})
+    assert any("permission" in item["risk"].lower() and "least privilege" in item["mitigation"].lower() for item in rbac["risks"])
+    assert any("secure file upload" in item["risk"].lower() and "malware" in item["mitigation"].lower() for item in upload["risks"])
 
 def test_agents_progress_one_stage_at_a_time_with_approval_gates(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch); p=create(c)

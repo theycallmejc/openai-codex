@@ -8,10 +8,10 @@
 - Structured generated-artifact review with targeted remediation where safe
 - Scoped workflow copilot and keyboard-first command palette
 - Offline evaluation suite with representative datasets, deterministic checks, and regression comparison
+- Risk Agent v2 coverage for RBAC permission controls and secure file-upload controls, verified by the curated evaluation suite
 
 ## Current
 
-- Close measured Risk Agent coverage gaps for RBAC and file-upload requirements, with evaluation cases proving the result
 - Keep workflow execution, error recovery, and review UX operational as backend behaviours evolve
 - Expand validation and version-aware review of generated artifacts without fabricating AI quality claims
 

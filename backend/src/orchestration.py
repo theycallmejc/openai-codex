@@ -18,7 +18,7 @@ class AgentSpec:
 
 REGISTRY = {
     "requirement": AgentSpec("requirement", "Extract requirement gaps and acceptance signals.", ("read_requirement", "save_result")),
-    "risk": AgentSpec("risk", "Identify failure, security, and duplicate-submission risks.", ("read_requirement", "save_result")),
+    "risk": AgentSpec("risk", "Identify failure, security, and duplicate-submission risks.", ("read_requirement", "save_result"), prompt_version="deterministic-risk-v2"),
     "review": AgentSpec("review", "Review readiness and block human approval when gaps remain.", ("read_requirement", "read_result", "save_result")),
 }
 
@@ -43,9 +43,16 @@ def execute(agent: str, context: dict[str, Any]) -> dict[str, Any]:
     if agent == "risk":
         lower = requirement.lower()
         risks = []
-        for term, severity, mitigation in (("password", "High", "Define expiry, reuse, and audit controls."), ("payment", "High", "Protect authorization and duplicate charges."), ("delete", "Medium", "Define confirmation and recovery behaviour."), ("retry", "Medium", "Define idempotency and timeout handling.")):
+        for term, label, severity, mitigation in (
+            ("password", "Password", "High", "Define expiry, reuse, and audit controls."),
+            ("payment", "Payment", "High", "Protect authorization and duplicate charges."),
+            ("permission", "Permission", "High", "Enforce least privilege, audit role changes, and test unauthorized access."),
+            ("file", "Secure file upload", "High", "Validate type and size, isolate malware findings, store files securely, and audit access."),
+            ("delete", "Delete", "Medium", "Define confirmation and recovery behaviour."),
+            ("retry", "Retry", "Medium", "Define idempotency and timeout handling."),
+        ):
             if term in lower:
-                risks.append({"risk": term.title() + " flow needs explicit controls", "severity": severity, "mitigation": mitigation})
+                risks.append({"risk": label + " flow needs explicit controls", "severity": severity, "mitigation": mitigation})
         return {"risks": risks, "status": "Needs review" if risks else "No specific risk signals detected"}
     intelligence = context.get("results", {}).get("requirement", {})
     missing = [item["dimension"] for item in intelligence.get("dimensions", []) if item.get("status") != "Good"]
