@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260808-workspace-overview">
+  <link rel="stylesheet" href="/static/styles.css?v=20260808-launch-banner">
 </head>
 <body>
   <div class="app-shell">
@@ -29,7 +29,10 @@
       <header class="topbar"><span id="crumb">New workflow</span><div class="topbar-actions"><span id="status" hidden></span><button id="themeToggle" class="icon-button" aria-label="Toggle color theme" title="Toggle color theme">◐</button></div></header>
 
       <section id="creationView" class="creation-view">
-        <header class="new-hero"><div><p>NEW WORKFLOW</p><h1>Turn a requirement into<br>QA-ready artifacts.</h1><span>Describe what you're building, set review gates, and generate traceable delivery evidence.</span></div><div class="hero-orbit" aria-hidden="true"><i></i><i></i><b>FP</b><small>ORCHESTRATE</small></div></header>
+        <header class="new-hero launch-banner" id="launchBanner">
+          <div class="banner-copy"><p>FLOWPILOT · GOVERNED DELIVERY</p><h1>From requirement to QA-ready—<br>with every handoff accounted for.</h1><span>Capture the outcome once. FlowPilot builds the analysis, BRD, backlog, tests, and traceability, pausing only when your approval matters.</span><div class="banner-actions"><button type="button" class="primary" id="bannerWrite">Start with a requirement <i>→</i></button><button type="button" class="banner-link" id="bannerSample">Use a sample scenario</button></div></div>
+          <div class="banner-flow" aria-label="Workflow stages"><button type="button" class="banner-dismiss" id="bannerDismiss" aria-label="Dismiss introduction" title="Dismiss introduction">×</button><span class="banner-flow-label">YOUR DELIVERY PATH</span><ol><li><b>01</b><span>Requirement</span></li><li><b>02</b><span>Analysis</span></li><li><b>03</b><span>Review gates</span></li><li><b>04</b><span>QA handoff</span></li></ol><div class="banner-assurance"><b>✓</b><span>Traceable by design</span></div></div>
+        </header>
         <section class="creation-stepper" aria-label="Workflow setup progress"><div class="setup-step active"><b>01</b><span><strong>Describe</strong><small>Capture the requirement</small></span></div><i></i><div class="setup-step"><b>02</b><span><strong>Configure agents</strong><small>Analysis and QA handoffs</small></span></div><i></i><div class="setup-step"><b>03</b><span><strong>Review gates</strong><small>Human approval controls</small></span></div><i></i><div class="setup-step"><b>04</b><span><strong>Generate</strong><small>QA-ready artifacts</small></span></div></section>
         <div class="creation-grid">
         <form id="workflowForm" class="requirement-form composer motion-surface" data-pointer-glow>
@@ -90,6 +93,6 @@
   </section>
 
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=20260808-workspace-overview"></script>
+  <script src="/static/app.js?v=20260808-launch-banner"></script>
 </body>
 </html>

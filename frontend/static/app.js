@@ -645,6 +645,10 @@ setTheme(localStorage.getItem('flowpilot.theme') || (matchMedia('(prefers-color-
 if (localStorage.getItem('flowpilot.sidebar-collapsed') === 'true') $('sidebarToggle').click();
 $('navNew').onclick = () => reset();
 document.querySelectorAll('[data-library-view]').forEach(button => button.onclick = () => showLibrary(button.dataset.libraryView));
+$('bannerWrite').onclick = () => { $('requirement').focus(); $('requirement').scrollIntoView({behavior:'smooth', block:'center'}); };
+$('bannerSample').onclick = () => { $('sampleRequirement').focus(); $('sampleRequirement').scrollIntoView({behavior:'smooth', block:'center'}); };
+$('bannerDismiss').onclick = () => { $('launchBanner').hidden = true; localStorage.setItem('flowpilot.banner-dismissed', 'true'); };
+if (localStorage.getItem('flowpilot.banner-dismissed') === 'true') $('launchBanner').hidden = true;
 $('requirement').addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') $('workflowForm').requestSubmit(); });
 $('startNextScenario').onclick = () => {
   const selected = samples[$('nextScenarioSelect').value];
