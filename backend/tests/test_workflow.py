@@ -106,6 +106,9 @@ def test_project_assistant_returns_contextual_workflow_guidance(tmp_path,monkeyp
     history=c.get(f"/api/projects/{p}/assistant/conversations/{conversation_id}").json()["data"]
     assert [message["role"] for message in history]==["user","assistant"]
     assert c.post(f"/api/projects/{p}/assistant",json={"message":"explain that", "conversation_id":conversation_id}).status_code==200
+    other = create(c)
+    isolated = c.post(f"/api/projects/{other}/assistant", json={"message":"What should I do next?", "conversation_id":conversation_id})
+    assert isolated.status_code == 404
 
 
 def test_orchestration_runs_dependencies_in_order_and_persists_history(tmp_path, monkeypatch):

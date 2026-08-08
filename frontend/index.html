@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>FlowPilot</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260809-traceability-tree">
+  <link rel="stylesheet" href="/static/styles.css?v=20260809-copilot">
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -99,7 +99,7 @@
   <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="false"><span>✦</span><b>Ask FlowPilot</b></button>
   <section id="chatPanel" class="chat-panel" aria-label="FlowPilot assistant" hidden>
     <header class="chat-head"><div><span><i></i> FLOWPILOT ASSISTANT</span><h2>Workflow guide</h2></div><div class="chat-tools"><button id="chatNew" aria-label="Start new conversation" title="New conversation">＋</button><button id="chatClear" aria-label="Clear conversation" title="Clear conversation">⌫</button><button id="chatClose" aria-label="Close assistant" title="Close assistant">×</button></div></header>
-    <div id="chatMessages" class="chat-messages" role="log" aria-live="polite"></div>
+    <div id="chatContext" class="chat-context">Using general FlowPilot guidance</div><div id="chatMessages" class="chat-messages" role="log" aria-live="polite"></div>
     <div class="chat-suggestions" id="chatSuggestions">
       <button data-chat-question="What should I do next?">What should I do next?</button>
       <button data-chat-question="Show my current coverage">Show coverage</button>
@@ -107,11 +107,11 @@
       <button data-chat-question="What are the approval gates?">Approval gates</button>
     </div>
     <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask about this workflow…"></textarea><button type="button" id="chatVoice" class="voice-button compact" aria-label="Start voice input for assistant" title="Dictate message">🎙</button><button id="chatSend" class="primary" aria-label="Send message">↑</button></form>
-    <div id="chatVoiceStatus" class="voice-status chat-voice-status" role="status" aria-live="polite" hidden></div>
+    <button id="chatStop" class="chat-stop secondary" type="button" hidden>Stop</button><button id="chatRetry" class="chat-retry" type="button" hidden>Retry last question</button><div id="chatVoiceStatus" class="voice-status chat-voice-status" role="status" aria-live="polite" hidden></div>
   </section>
 
   <dialog id="commandDialog" class="next-dialog command-dialog" aria-labelledby="commandDialogTitle"><section class="dialog-card"><button type="button" class="dialog-close" data-close-dialog="commandDialog" aria-label="Close">×</button><p class="eyebrow">FLOWPILOT COMMANDS</p><h2 id="commandDialogTitle">How can FlowPilot help?</h2><input id="commandSearch" type="search" placeholder="Search commands" autocomplete="off"><div id="commandList" class="command-list"><button data-command="improve"><span>Improve requirement</span><small>Find missing details in the current brief</small></button><button data-command="coverage"><span>Review coverage</span><small>Explain current requirement and test coverage</small></button><button data-command="workflow"><span>Explain workflow</span><small>Open a contextual guide to the delivery stages</small></button></div></section></dialog>
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
-  <script src="/static/app.js?v=20260809-traceability-tree"></script>
+  <script src="/static/app.js?v=20260809-copilot"></script>
 </body>
 </html>

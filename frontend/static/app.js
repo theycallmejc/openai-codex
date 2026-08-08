@@ -14,6 +14,7 @@ let activeWorkspaceId = localStorage.getItem('flowpilot.active-workspace') || ''
 let workspaces = [];
 let editingWorkspaceId = null;
 let requirementIntelligence = null;
+let lastChatQuestion = '';
 
 const tabs = ['Requirement', 'Analysis', 'BRD', 'Backlog', 'Tests', 'Traceability', 'QA Handoff'];
 const stages = [
@@ -133,10 +134,28 @@ function chatReply(question) {
   return `I can help with the next action, approvals, test coverage, traceability, or QA handoff. Right now, ${vm.nextAction.detail}`;
 }
 
+function renderCopilotText(text) {
+  const safe = esc(text);
+  const withCode = safe.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+  const withBold = withCode.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  const rows = withBold.split('\n');
+  if (rows.length > 1 && rows.every(row => row.includes('|'))) return `<table>${rows.map(row => `<tr>${row.split('|').filter(Boolean).map(cell => `<td>${cell.trim()}</td>`).join('')}</tr>`).join('')}</table>`;
+  return withBold.replace(/\n/g, '<br>');
+}
+
+function updateCopilotContext() {
+  const context = $('chatContext'); if (!context) return;
+  if (!project) { context.textContent = 'Using general FlowPilot guidance'; return; }
+  context.textContent = `Using context from: Workflow ${project.public_id} · ${view}`;
+  const prompts = view === 'Requirement' ? ['Improve this requirement', 'Find ambiguity', 'Generate acceptance criteria'] : view === 'Tests' ? ['Find missing tests', 'Explain this scenario', 'Review edge cases'] : view === 'Traceability' ? ['Find coverage gaps', 'Explain why coverage is missing', 'Explain this relationship'] : ['Explain what is running', 'Why did this agent fail?', 'Summarize workflow'];
+  $('chatSuggestions').innerHTML = prompts.map(prompt => `<button data-chat-question="${esc(prompt)}">${esc(prompt)}</button>`).join('');
+  document.querySelectorAll('[data-chat-question]').forEach(button => button.onclick = () => askChat(button.dataset.chatQuestion));
+}
+
 function addChatMessage(text, role = 'assistant') {
   const message = document.createElement('div');
   message.className = `chat-message ${role}`;
-  message.textContent = text;
+  if (role === 'assistant') message.innerHTML = renderCopilotText(text); else message.textContent = text;
   if (role === 'assistant') {
     const copy = document.createElement('button');
     copy.className = 'chat-copy'; copy.type = 'button'; copy.textContent = 'Copy'; copy.setAttribute('aria-label', 'Copy assistant response');
@@ -151,10 +170,13 @@ async function askChat(question) {
   const cleaned = question.trim();
   if (!cleaned || chatAbortController) return;
   addChatMessage(cleaned, 'user');
+  lastChatQuestion = cleaned;
+  $('chatRetry').hidden = true;
   const typing = document.createElement('div');
   typing.className = 'chat-message assistant typing';
   typing.innerHTML = '<i></i><i></i><i></i>';
   $('chatMessages').append(typing);
+  $('chatStop').hidden = false;
   $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
   try {
     chatAbortController = new AbortController();
@@ -168,16 +190,17 @@ async function askChat(question) {
   } catch (error) {
     typing.remove();
     const message = error.name === 'AbortError' ? 'Response stopped.' : 'I could not respond right now. Please retry your message.';
-    addChatMessage(message); if (error.name !== 'AbortError') toast(message, 'error');
+    addChatMessage(message); $('chatRetry').hidden = false; if (error.name !== 'AbortError') toast(message, 'error');
   } finally {
     chatAbortController = null;
+    $('chatStop').hidden = true;
   }
 }
 
 function toggleChat(open) {
   $('chatPanel').hidden = !open;
   $('chatToggle').setAttribute('aria-expanded', String(open));
-  if (open) $('chatInput').focus();
+  if (open) { updateCopilotContext(); $('chatInput').focus(); }
 }
 
 function time(value) {
@@ -614,6 +637,7 @@ function render() {
   $('crumb').textContent = project.public_id;
   status(vm.qaReadiness === 'Ready' ? 'Ready' : vm.workflowState.includes('AWAITING') ? 'Awaiting review' : 'Workflow active');
   sidebar(vm);
+  updateCopilotContext();
   const assignmentType = project.state === 'BRD_AWAITING_APPROVAL' ? 'brd' : project.state === 'BACKLOG_AWAITING_APPROVAL' ? 'backlog' : null;
   const assignment = assignmentType ? (project.review_assignments || []).find(item => item.artifact_type === assignmentType) : null;
 
@@ -802,6 +826,7 @@ async function runAutomation() {
 function reset(prefill = '') {
   project = null;
   view = 'Requirement';
+  updateCopilotContext();
   $('workspaceView').hidden = true;
   $('libraryView').hidden = true;
   $('creationView').hidden = false;
@@ -906,6 +931,8 @@ $('reviewForm').addEventListener('submit', event => {
 
 $('chatToggle').onclick = () => toggleChat($('chatPanel').hidden);
 $('chatClose').onclick = () => toggleChat(false);
+$('chatStop').onclick = () => chatAbortController?.abort();
+$('chatRetry').onclick = () => { if (lastChatQuestion) askChat(lastChatQuestion); };
 $('chatNew').onclick = () => { chatConversationId = null; $('chatMessages').replaceChildren(); addChatMessage('New conversation started. How can I help?'); };
 $('chatClear').onclick = async () => { if (chatConversationId && project) await fetch(`/api/projects/${project.public_id}/assistant/conversations/${chatConversationId}`, {method:'DELETE'}); $('chatNew').click(); };
 $('chatForm').addEventListener('submit', event => { event.preventDefault(); const message = $('chatInput').value; $('chatInput').value = ''; askChat(message); });
