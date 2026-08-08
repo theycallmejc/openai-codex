@@ -9,6 +9,7 @@ let voiceTarget = null;
 let voiceStartedAt = 0;
 let voiceTimer = null;
 let libraryScreen = 'workflows';
+let pendingReview = null;
 
 const tabs = ['Requirement', 'Analysis', 'BRD', 'Backlog', 'Tests', 'Traceability', 'QA Handoff'];
 const stages = [
@@ -521,11 +522,8 @@ function bindWorkspace(vm) {
   document.querySelector('[data-copy-summary]')?.addEventListener('click', () => copySummary(vm));
   document.querySelector('[data-download]')?.addEventListener('click', () => downloadHandoff(vm));
   document.querySelectorAll('[data-run]').forEach(button => button.onclick = () => run(button.dataset.run));
-  document.querySelectorAll('[data-approve]').forEach(button => button.onclick = () => run(`${button.dataset.approve}/approve`, {reviewer:$('reviewer').value || 'Reviewer'}));
-  document.querySelectorAll('[data-reject]').forEach(button => button.onclick = () => {
-    const reason = window.prompt('Describe the changes required before regeneration:');
-    if (reason?.trim()) run(`${button.dataset.reject}/reject`, {reviewer:$('reviewer').value || 'Reviewer', reason:reason.trim()});
-  });
+  document.querySelectorAll('[data-approve]').forEach(button => button.onclick = () => openReviewDialog(button.dataset.approve, true));
+  document.querySelectorAll('[data-reject]').forEach(button => button.onclick = () => openReviewDialog(button.dataset.reject, false));
   document.querySelectorAll('[data-automation]').forEach(button => button.onclick = runAutomation);
   document.querySelectorAll('[data-next]').forEach(button => button.onclick = () => vm.nextAction.path ? run(vm.nextAction.path) : render());
   document.querySelectorAll('[data-reset]').forEach(button => button.onclick = reset);
@@ -552,6 +550,22 @@ function downloadHandoff(vm) {
 function openNextScenario() {
   $('nextScenarioDialog').showModal();
   $('nextScenarioSelect').focus();
+}
+
+function openReviewDialog(stage, approved) {
+  pendingReview = {stage, approved};
+  const reviewer = $('reviewer')?.value || '';
+  $('reviewDialogReviewer').value = reviewer;
+  $('reviewDialogReason').value = '';
+  $('reviewDialogError').textContent = '';
+  $('reviewDialogTitle').textContent = approved ? 'Approve artifact' : 'Request changes';
+  $('reviewDialogCopy').textContent = approved ? 'Record who approved this handoff before the workflow continues.' : 'Describe what must change before this artifact is regenerated.';
+  $('reviewDialogEyebrow').textContent = approved ? 'APPROVAL GATE' : 'CHANGE REQUEST';
+  $('reviewReasonField').hidden = approved;
+  $('reviewDialogReason').required = !approved;
+  $('reviewDialogSubmit').textContent = approved ? 'Approve and continue' : 'Request changes';
+  $('reviewDialog').showModal();
+  $('reviewDialogReviewer').focus();
 }
 
 async function run(path, body = {}) {
@@ -670,6 +684,19 @@ $('startNextScenario').onclick = () => {
   reset(selected?.raw_requirement || '');
   if (selected) $('formHint').textContent = `Loaded “${selected.name}”. Review it before creating the workflow.`;
 };
+$('reviewDialogClose').onclick = () => $('reviewDialog').close();
+$('reviewDialogCancel').onclick = () => $('reviewDialog').close();
+$('reviewForm').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!pendingReview) return;
+  const reviewer = $('reviewDialogReviewer').value.trim();
+  const reason = $('reviewDialogReason').value.trim();
+  if (!reviewer || (!pendingReview.approved && !reason)) { $('reviewDialogError').textContent = 'Add your name and a reason before continuing.'; return; }
+  const action = pendingReview.approved ? 'approve' : 'reject';
+  $('reviewDialog').close();
+  run(`${pendingReview.stage}/${action}`, {reviewer, reason});
+  pendingReview = null;
+});
 
 $('chatToggle').onclick = () => toggleChat($('chatPanel').hidden);
 $('chatClose').onclick = () => toggleChat(false);
@@ -707,4 +734,4 @@ try {
   if (!user?.name) window.location.replace('/');
   else $('accountName').textContent = user.name;
 } catch (_) { localStorage.removeItem('flowpilot.user'); window.location.replace('/'); }
-$('signOut').onclick = () => { localStorage.removeItem('flowpilot.user'); window.location.assign('/'); };
+$('signOut').onclick = async () => { try { await fetch('/api/auth/logout', {method:'POST'}); } finally { localStorage.removeItem('flowpilot.user'); window.location.assign('/'); } };

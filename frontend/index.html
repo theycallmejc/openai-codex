@@ -72,6 +72,19 @@
     </form>
   </dialog>
 
+  <dialog id="reviewDialog" class="next-dialog" aria-labelledby="reviewDialogTitle">
+    <form id="reviewForm" class="dialog-card">
+      <button type="button" class="dialog-close" id="reviewDialogClose" aria-label="Close">×</button>
+      <p class="eyebrow" id="reviewDialogEyebrow">REVIEW GATE</p>
+      <h2 id="reviewDialogTitle">Approve artifact</h2>
+      <p class="dialog-copy" id="reviewDialogCopy">Record the decision before the workflow continues.</p>
+      <label>Reviewer<input id="reviewDialogReviewer" required maxlength="120" autocomplete="name" placeholder="Your name"></label>
+      <label id="reviewReasonField">Reason<textarea id="reviewDialogReason" maxlength="2000" rows="4" placeholder="Describe the requested changes"></textarea></label>
+      <p id="reviewDialogError" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="secondary" id="reviewDialogCancel">Cancel</button><button class="primary" id="reviewDialogSubmit" type="submit">Confirm decision</button></div>
+    </form>
+  </dialog>
+
   <button id="chatToggle" class="chat-toggle" aria-label="Open FlowPilot assistant" aria-expanded="false"><span>✦</span><b>Ask FlowPilot</b></button>
   <section id="chatPanel" class="chat-panel" aria-label="FlowPilot assistant" hidden>
     <header class="chat-head"><div><span><i></i> FLOWPILOT ASSISTANT</span><h2>Workflow guide</h2></div><div class="chat-tools"><button id="chatNew" aria-label="Start new conversation" title="New conversation">＋</button><button id="chatClear" aria-label="Clear conversation" title="Clear conversation">⌫</button><button id="chatClose" aria-label="Close assistant" title="Close assistant">×</button></div></header>

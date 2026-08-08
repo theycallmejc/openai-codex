@@ -7,7 +7,7 @@ import re
 import sqlite3
 import uuid
 import logging
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.sessions import SessionMiddleware
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = Path(os.getenv("SDLC_DATABASE_PATH", str(ROOT / "data" / "sdlc-framework.db")))
@@ -24,6 +25,8 @@ MAX_REQUIREMENT_LENGTH = 10_000
 STATES = {"DRAFT", "REQUIREMENT_CAPTURED", "ANALYSIS_COMPLETED", "BRD_GENERATED", "BRD_AWAITING_APPROVAL", "BRD_APPROVED", "BRD_REJECTED", "BACKLOG_GENERATED", "BACKLOG_AWAITING_APPROVAL", "BACKLOG_APPROVED", "BACKLOG_REJECTED", "TESTS_GENERATED", "TRACEABILITY_VALIDATED", "QA_HANDOFF_READY", "COMPLETED", "FAILED"}
 ASSISTANT_CONTEXT_WINDOW = 8
 ASSISTANT_RATE_LIMIT = 30
+SESSION_SECRET = os.getenv("FLOWPILOT_SESSION_SECRET", "flowpilot-local-development-only")
+SESSION_HTTPS_ONLY = os.getenv("FLOWPILOT_SESSION_HTTPS_ONLY", "false").lower() == "true"
 ASSISTANT_KNOWLEDGE = {
     "application": "FlowPilot",
     "purpose": "A local SDLC-to-QA workflow application that turns a requirement into governed, QA-ready artifacts.",
@@ -31,7 +34,13 @@ ASSISTANT_KNOWLEDGE = {
     "limitations": "This local MVP uses deterministic generation and has no configured external LLM provider, authentication system, or multi-user sharing.",
 }
 
-app = FastAPI(title="Automated SDLC-to-QA MVP", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Automated SDLC-to-QA MVP", version="1.0.0", lifespan=lifespan)
 logger = logging.getLogger("flowpilot")
 
 
@@ -67,6 +76,24 @@ def envelope(data: Any, status: int = 200) -> JSONResponse:
     return JSONResponse(status_code=status, content={"success": True, "data": data, "request_id": str(uuid.uuid4())})
 
 
+@app.middleware("http")
+async def security_and_session(request: Request, call_next):
+    """Apply a small production-safe baseline while keeping the local MVP usable."""
+    protected = request.url.path.startswith("/api/projects") or request.url.path == "/api/assistant"
+    if protected and not request.session.get("user_id"):
+        return JSONResponse(status_code=401, content={"success": False, "error": {"code": "AUTHENTICATION_REQUIRED", "message": "Sign in to access the workspace."}, "request_id": str(uuid.uuid4())})
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+    return response
+
+
+# Added after the function middleware so session data is available to it.
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, https_only=SESSION_HTTPS_ONLY, same_site="lax")
+
+
 @app.exception_handler(HTTPException)
 async def api_error(_: Request, exc: HTTPException) -> JSONResponse:
     detail = exc.detail if isinstance(exc.detail, dict) else {"code": "REQUEST_ERROR", "message": str(exc.detail)}
@@ -93,10 +120,12 @@ async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
 @contextmanager
 def db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
+    connection = sqlite3.connect(DB_PATH, timeout=5)
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA journal_mode = WAL")
         yield connection
         connection.commit()
     except Exception:
@@ -121,11 +150,6 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS assistant_messages (id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT, created_at TEXT, FOREIGN KEY(conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE);
         CREATE INDEX IF NOT EXISTS idx_assistant_messages_conversation ON assistant_messages(conversation_id, created_at);
         """)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
 
 
 def public_id(prefix: str, numeric_id: int) -> str:
@@ -261,12 +285,19 @@ def health() -> dict[str, Any]:
 
 
 @app.post("/api/auth/login")
-def login(payload: LoginInput) -> JSONResponse:
+def login(request: Request, payload: LoginInput) -> JSONResponse:
     """Local development sign-in; production identity provider integration is intentionally out of scope."""
     email = payload.email.strip().lower()
     if email == "admin@flowpilot.local" and payload.password == "flowpilot":
+        request.session["user_id"] = "local-admin"
         return envelope({"id": "local-admin", "name": "FlowPilot Admin", "email": email, "workspace": "Local workspace"})
     raise HTTPException(401, {"code": "INVALID_CREDENTIALS", "message": "Use the local demo account or check your credentials."})
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request) -> JSONResponse:
+    request.session.clear()
+    return envelope({"signed_out": True})
 
 
 @app.post("/api/projects", status_code=201)
@@ -390,7 +421,10 @@ def clear_assistant_conversation(project_id: str, conversation_id: str) -> JSONR
 @app.get("/api/samples")
 def get_samples() -> JSONResponse:
     """Expose the checked-in test requirements to the local UI."""
-    with (ROOT / "sample-data" / "sample-requirements.json").open(encoding="utf-8") as handle:
+    samples_path = ROOT / "sample-data" / "sample-requirements.json"
+    if not samples_path.exists():
+        raise HTTPException(503, {"code": "SAMPLES_UNAVAILABLE", "message": "Sample scenarios are not installed in this environment."})
+    with samples_path.open(encoding="utf-8") as handle:
         return envelope(json.load(handle))
 
 
@@ -416,9 +450,8 @@ def submit_requirement(project_id: str, payload: RequirementInput) -> JSONRespon
 
 @app.post("/api/projects/{project_id}/workflow/run")
 def workflow_run(project_id: str) -> JSONResponse:
-    with db() as c:
-        project = project_row(c, project_id)
-        return envelope({**run_pipeline(c, project), "automation_mode": "end_to_end"})
+    """Legacy route retained for clients, now constrained to one safe workflow step."""
+    return automation_run_next(project_id)
 
 
 @app.post("/api/projects/{project_id}/automation/run-next")

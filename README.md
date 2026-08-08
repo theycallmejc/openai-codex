@@ -70,6 +70,7 @@ The demo emits machine-readable evidence of the complete staged workflow, includ
 ## Current boundaries
 
 - Local single-user application with a development-only browser sign-in gate
+- Workflow APIs require the signed browser session. Set `FLOWPILOT_SESSION_SECRET` to a strong unique value before sharing the service, and set `FLOWPILOT_SESSION_HTTPS_ONLY=true` behind HTTPS.
 - Deterministic artifact generation; no runtime LLM provider is configured
 - Login is not production authentication: workflow APIs are not yet protected by server-side session middleware
 - No external connectors or deployed scheduler yet

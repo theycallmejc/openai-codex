@@ -14,6 +14,7 @@ with tempfile.TemporaryDirectory() as directory:
     import backend.src.main as main
     main.init_db()
     client = TestClient(main.app)
+    assert client.post("/api/auth/login", json={"email": "admin@flowpilot.local", "password": "flowpilot"}).status_code == 200
     project = client.post("/api/projects", json={"name": "Automated demo"}).json()["data"]["public_id"]
     client.post(f"/api/projects/{project}/requirements", json={"raw_requirement": "Users can save a shopping list. Users can rename a shopping list."})
     states = []

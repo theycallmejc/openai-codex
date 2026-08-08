@@ -7,6 +7,10 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       SDLC_ENVIRONMENT: container-reference
+      FLOWPILOT_SESSION_SECRET: ${FLOWPILOT_SESSION_SECRET:-change-this-before-shared-deployment}
+      FLOWPILOT_SESSION_HTTPS_ONLY: "false"
+    volumes:
+      - ./data:/app/data
     healthcheck:
       test:
         - CMD

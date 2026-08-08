@@ -5,7 +5,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("SDLC_DATABASE_PATH", str(tmp_path / "test.db"))
     import backend.src.main as main
     importlib.reload(main); main.init_db()
-    return TestClient(main.app)
+    test_client = TestClient(main.app)
+    assert test_client.post("/api/auth/login", json={"email":"admin@flowpilot.local","password":"flowpilot"}).status_code == 200
+    return test_client
 
 def create(c): return c.post("/api/projects",json={"name":"Automated"}).json()["data"]["public_id"]
 
@@ -30,7 +32,9 @@ def test_duplicate_and_missing_requirement_are_rejected(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch); p=create(c); payload={"raw_requirement":"Users can export reports to CSV."}
     assert c.post(f"/api/projects/{p}/requirements",json=payload).status_code==201
     assert c.post(f"/api/projects/{p}/requirements",json=payload).status_code==409
-    assert c.post(f"/api/projects/{p}/workflow/run").status_code==200
+    safe_run = c.post(f"/api/projects/{p}/workflow/run")
+    assert safe_run.status_code == 200
+    assert safe_run.json()["data"]["state"] == "ANALYSIS_COMPLETED"
 
 
 def test_projects_library_lists_created_workflows(tmp_path,monkeypatch):
@@ -60,6 +64,15 @@ def test_invalid_request_uses_the_application_error_envelope(tmp_path,monkeypatc
     assert payload["success"] is False
     assert payload["error"]["code"]=="VALIDATION_ERROR"
     assert isinstance(payload["error"]["message"],str)
+
+
+def test_workspace_apis_require_a_server_side_session(tmp_path,monkeypatch):
+    monkeypatch.setenv("SDLC_DATABASE_PATH", str(tmp_path / "test.db"))
+    import backend.src.main as main
+    importlib.reload(main); main.init_db()
+    response = TestClient(main.app).get("/api/projects")
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
 
 
 def test_login_and_workspace_are_served_as_separate_pages(tmp_path,monkeypatch):
