@@ -17,6 +17,8 @@ def test_risk_agent_flags_permission_and_secure_file_upload_controls():
     upload = execute("risk", {"requirement": "A signed-in user uploads a file that must be stored securely."})
     assert any("permission" in item["risk"].lower() and "least privilege" in item["mitigation"].lower() for item in rbac["risks"])
     assert any("secure file upload" in item["risk"].lower() and "malware" in item["mitigation"].lower() for item in upload["risks"])
+    profile = execute("risk", {"requirement": "A user can edit their profile and update their display name."})
+    assert not profile["risks"]
 
 def test_agents_progress_one_stage_at_a_time_with_approval_gates(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch); p=create(c)

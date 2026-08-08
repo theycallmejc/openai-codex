@@ -1,6 +1,7 @@
 """Deterministic, validated orchestration primitives for FlowPilot workflows."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,6 +43,7 @@ def execute(agent: str, context: dict[str, Any]) -> dict[str, Any]:
         return result
     if agent == "risk":
         lower = requirement.lower()
+        keywords = set(re.findall(r"[a-z0-9_]+", lower))
         risks = []
         for term, label, severity, mitigation in (
             ("password", "Password", "High", "Define expiry, reuse, and audit controls."),
@@ -51,7 +53,7 @@ def execute(agent: str, context: dict[str, Any]) -> dict[str, Any]:
             ("delete", "Delete", "Medium", "Define confirmation and recovery behaviour."),
             ("retry", "Retry", "Medium", "Define idempotency and timeout handling."),
         ):
-            if term in lower:
+            if term in keywords:
                 risks.append({"risk": label + " flow needs explicit controls", "severity": severity, "mitigation": mitigation})
         return {"risks": risks, "status": "Needs review" if risks else "No specific risk signals detected"}
     intelligence = context.get("results", {}).get("requirement", {})

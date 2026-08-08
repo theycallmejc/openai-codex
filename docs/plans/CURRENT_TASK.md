@@ -2,58 +2,57 @@
 
 ## Objective
 
-Close the measured Risk Agent coverage gaps for RBAC and file-upload requirements while preserving the deterministic, explainable architecture.
+Prevent the Risk Agent's secure file-upload rule from falsely matching unrelated words such as `profile`.
 
 ## Why This Matters
 
-The production evaluation suite currently fails these two curated cases. Improving this capability without a measured regression test would undermine FlowPilot's AI-quality controls.
+Risk findings influence workflow review. A high-severity false positive creates misleading work and reduces trust in deterministic, explainable automation.
 
 ## Scope
 
-- Inspect the Risk Agent rules and the RBAC/file-upload evaluation fixtures.
-- Add only justified deterministic risk signals and mitigations.
-- Add or adjust targeted tests and run the evaluation comparison.
-- Record the verified result in evaluation documentation and completed work.
+- Reproduce the false-positive match from the file-upload rule.
+- Change keyword matching to recognize complete words only.
+- Preserve all existing curated Risk Agent coverage.
+- Add a regression test and run the evaluation suite.
 
 ## Out of Scope
 
-- Adding a live LLM provider or model judge
-- Broad agent redesign
-- New external integrations or unrelated UI redesign
+- New risk domains, provider changes, or model evaluation
+- Broad agent redesign or UI work
+- Changes to the curated evaluation expectations
 
 ## Implementation Plan
 
-- [x] Reproduce the two evaluation failures.
-- [x] Define precise RBAC and file-upload risk rules.
-- [x] Implement and unit-test the smallest correct change.
-- [x] Run the complete evaluation suite against a baseline.
-- [x] Record results and limitations.
+- [x] Reproduce the false-positive profile scenario.
+- [x] Implement complete-word deterministic rule matching.
+- [x] Add a focused regression test.
+- [x] Run the complete evaluation suite.
+- [x] Record verification and limitations.
 
 ## Acceptance Criteria
 
-- [x] RBAC expected risk signal passes in the curated evaluation.
-- [x] File-upload expected risk signal passes in the curated evaluation.
+- [x] A profile-only requirement produces no file-upload risk.
+- [x] A real file-upload requirement still produces the secure file-upload risk.
 - [x] Existing Risk Agent cases remain valid.
 - [x] No live API is called from unit tests.
-- [x] Evaluation report proves the measured change.
+- [x] Evaluation report remains fully passing.
 
 ## Verification
 
-- [x] Tests — 15 passed, 78.61% backend coverage.
-- [x] Evaluation suite and baseline comparison — 8/8 passed; RBAC and file-upload improved; no regressions.
+- [x] Tests — 15 passed, 78.67% backend coverage.
+- [x] Evaluation suite and baseline comparison — 8/8 passed; no regressions from the Risk Agent v2 baseline.
 - [x] Application run if backend behaviour changes — API workflow exercised through isolated FastAPI TestClient databases.
 - [x] UI verification if applicable — not applicable; no UI change.
 - [x] No relevant console/server errors
 
 ## Implementation Decisions
 
-- Added a permission-control risk rule with least-privilege, audit, and unauthorized-access mitigation.
-- Added a secure file-upload risk rule with type/size validation, malware isolation, secure storage, and audit mitigation.
-- Versioned the Risk Agent metadata as `deterministic-risk-v2`; no live model was introduced.
+- Risk detection now tokenizes the lowercased requirement and matches complete tokens, rather than matching arbitrary substrings.
+- The file rule continues to match a standalone `file` token and retains its existing mitigation.
 
 ## Limitations
 
-The Risk Agent remains a deterministic keyword rule set. The 8/8 result proves coverage for the curated core suite only; it does not establish broad production-domain coverage.
+The rule engine remains keyword-based. Token matching prevents embedded-word false positives, but it does not recognize all synonyms or multiword domain concepts.
 
 ## Status
 
