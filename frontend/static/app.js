@@ -717,11 +717,22 @@ function bindWorkspace(vm) {
 
 async function loadOrchestrationPlan() {
   const target = $('orchestrationPlan'); if (!target || !project) return;
-  target.textContent = 'Loading approved agent plan…';
-  try { const plan = await api(`/api/projects/${project.public_id}/orchestration/plan`); target.innerHTML = `<div class="agent-plan">${plan.steps.map((step, index) => `<article><b>${String(index + 1).padStart(2,'0')}</b><div><strong>${esc(step.agent)} agent</strong><span>${esc(step.goal)}</span></div><button class="secondary" data-run-agent="${esc(step.agent)}">Run</button></article>`).join('')}</div>`; document.querySelectorAll('[data-run-agent]').forEach(button => button.onclick = () => runOrchestrationAgent(button.dataset.runAgent)); } catch (error) { target.textContent = error.message || 'Unable to load the agent plan.'; }
+  target.setAttribute('aria-busy', 'true'); target.textContent = 'Loading approved agent plan…';
+  try {
+    const plan = await api(`/api/projects/${project.public_id}/orchestration/plan`);
+    const completed = new Set((project.orchestration_runs || []).filter(run => run.status === 'completed').map(run => run.agent));
+    target.innerHTML = `<div class="agent-plan">${plan.steps.map((step, index) => {
+      const waitingFor = (step.depends_on || []).filter(agent => !completed.has(agent));
+      const complete = completed.has(step.agent);
+      const status = complete ? ['completed', 'Completed'] : waitingFor.length ? ['waiting', `Waiting for ${waitingFor.join(', ')}`] : ['ready', 'Ready to run'];
+      return `<article><b>${String(index + 1).padStart(2,'0')}</b><div><strong>${esc(step.agent)} agent</strong><span>${esc(step.goal)}</span><em class="agent-status ${status[0]}">${esc(status[1])}</em></div><button class="secondary" data-run-agent="${esc(step.agent)}" ${waitingFor.length ? 'disabled title="Complete the required agent first"' : ''}>${complete ? 'Run again' : 'Run'}</button></article>`;
+    }).join('')}</div>`;
+    document.querySelectorAll('[data-run-agent]').forEach(button => button.onclick = () => runOrchestrationAgent(button.dataset.runAgent));
+  } catch (error) {
+    target.innerHTML = `<section class="agent-result agent-error" role="alert"><p>AGENT PLAN UNAVAILABLE</p><h3>Unable to load the plan</h3><span>${esc(error.message || 'Please retry the request.')}</span><button class="secondary" data-load-plan>Try again</button></section>`;
+    document.querySelector('[data-load-plan]')?.addEventListener('click', loadOrchestrationPlan);
+  } finally { target.removeAttribute('aria-busy'); }
 }
-
-async function runOrchestrationAgent(agent) { const target = $('orchestrationPlan'); try { target.textContent = `Running ${agent} agent…`; const result = await api(`/api/projects/${project.public_id}/orchestration/${agent}/run`, {}); target.innerHTML = `<section class="agent-result"><strong>${esc(agent)} agent completed</strong><pre>${esc(JSON.stringify(result.result, null, 2))}</pre><div><button class="secondary" data-agent-feedback="true">Useful</button><button class="secondary" data-agent-feedback="false">Not useful</button></div></section>`; document.querySelectorAll('[data-agent-feedback]').forEach(button => button.onclick = async () => { await api(`/api/projects/${project.public_id}/orchestration/${agent}/feedback`, {useful:button.dataset.agentFeedback === 'true'}); toast('Feedback recorded', 'success'); }); } catch (error) { target.textContent = error.message || `Unable to run ${agent} agent.`; } }
 
 async function runAllOrchestrationAgents() {
   const button = document.querySelector('[data-run-all-agents]'); const target = $('orchestrationPlan');
@@ -729,6 +740,7 @@ async function runAllOrchestrationAgents() {
   try {
     target.textContent = 'Running the dependency-aware agent workflow…';
     const result = await api(`/api/projects/${project.public_id}/orchestration/run-all`, {});
+    project = await api(`/api/projects/${project.public_id}`);
     toast(`${result.executions.filter(item => item.status === 'completed').length} agent handoffs completed`, 'success');
     await loadOrchestrationPlan();
   } catch (error) { target.textContent = error.message || 'Unable to run the agent workflow.'; }
@@ -752,13 +764,17 @@ function agentReport(agent, result) {
 async function runOrchestrationAgent(agent) {
   const target = $('orchestrationPlan');
   try {
-    target.textContent = `Running ${agent} agent…`;
+    target.setAttribute('aria-busy', 'true'); target.textContent = `Running ${agent} agent…`;
     const run = await api(`/api/projects/${project.public_id}/orchestration/${agent}/run`, {});
+    project = await api(`/api/projects/${project.public_id}`);
     target.innerHTML = `${agentReport(agent, run.result)}<div class="agent-feedback"><span>Was this review useful?</span><button class="secondary" data-agent-feedback="true">Useful</button><button class="secondary" data-agent-feedback="false">Not useful</button><button class="secondary" data-load-plan>Back to agent plan</button></div>`;
     document.querySelectorAll('[data-agent-feedback]').forEach(button => button.onclick = async () => { await api(`/api/projects/${project.public_id}/orchestration/${agent}/feedback`, {useful: button.dataset.agentFeedback === 'true'}); toast('Feedback recorded', 'success'); });
     document.querySelector('[data-load-plan]')?.addEventListener('click', loadOrchestrationPlan);
     toast(`${agent} agent completed`, 'success');
-  } catch (error) { target.textContent = error.message || `Unable to run ${agent} agent.`; }
+  } catch (error) {
+    target.innerHTML = `<section class="agent-result agent-error" role="alert"><p>AGENT DID NOT RUN</p><h3>${esc(agent)} agent needs attention</h3><span>${esc(error.message || `Unable to run ${agent} agent.`)}</span><button class="secondary" data-load-plan>Back to agent plan</button></section>`;
+    document.querySelector('[data-load-plan]')?.addEventListener('click', loadOrchestrationPlan);
+  } finally { target?.removeAttribute('aria-busy'); }
 }
 
 function copySummary(vm) {

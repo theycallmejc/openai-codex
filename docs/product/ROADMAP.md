@@ -10,6 +10,7 @@
 - Offline evaluation suite with representative datasets, deterministic checks, and regression comparison
 - Risk Agent v2 coverage for RBAC permission controls and secure file-upload controls, verified by the curated evaluation suite
 - Risk Agent reliability fix: complete-word matching prevents secure-file-upload false positives from unrelated terms such as `profile`
+- Workflow execution agent-plan reliability: dependency-aware actions, structured recovery states, and removal of an obsolete raw-JSON handler
 
 ## Current
 
