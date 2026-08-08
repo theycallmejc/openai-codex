@@ -74,3 +74,13 @@ The demo emits machine-readable evidence of the complete staged workflow, includ
 - Deterministic artifact generation; no runtime LLM provider is configured
 - Login is not production authentication: workflow APIs are not yet protected by server-side session middleware
 - No external connectors or deployed scheduler yet
+## AI quality evaluation
+
+FlowPilot has an offline, deterministic evaluation suite for requirement analysis, acceptance criteria, risk detection, QA scenarios, review findings, and traceability. It runs the real API workflow against isolated temporary SQLite databases and never calls an external model during unit tests.
+
+```powershell
+python -m evals.run --suite core
+python -m evals.run --suite core --baseline evals/results/<prior-report>.json
+```
+
+Each saved JSON report records the run ID, suite version, prompt version, model label, agent, timestamp, latency, available token usage, deterministic check failures, per-case metrics, and regression comparison. `--live` is intentionally unavailable until a live-model adapter is explicitly configured; this keeps CI and normal tests network-free.

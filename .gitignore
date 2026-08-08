@@ -7,6 +7,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .coverage
+evals/results/
 coverage.json
 htmlcov/
 demo-evidence.json
