@@ -857,6 +857,38 @@ function autoGrowRequirement() {
 $('requirement').addEventListener('input', autoGrowRequirement);
 autoGrowRequirement();
 
+const clarificationTemplates = {
+  'Acceptance Criteria': 'Acceptance criteria\n- Given a valid actor\n- When they perform the requested action\n- Then the expected outcome is recorded',
+  'Edge Cases': 'Edge cases\n- Handle invalid input, duplicate submissions, expired requests, and unavailable dependencies.',
+  'Security': 'Security and constraints\n- Define authorization, audit requirements, and applicable limits.'
+};
+
+function renderComposerIntelligence() {
+  const text = $('requirement').value.trim().toLowerCase();
+  const checks = [
+    ['User persona', /\b(users?|customers?|admins?|system)\b/], ['Validation rule', /\b(must|only|cannot|unless|rule|within)\b/],
+    ['Acceptance criteria', /\b(given|when|then|acceptance)\b/], ['Failure scenario', /\b(error|fail|invalid|duplicate|expired|retry|edge)\b/]
+  ];
+  const missing = checks.filter(([, pattern]) => !pattern.test(text)).map(([name]) => name);
+  const panel = document.querySelector('.intelligence-rail');
+  let details = $('composerIntelligence');
+  if (!details) { details = document.createElement('section'); details.id = 'composerIntelligence'; panel.append(details); }
+  details.innerHTML = `<p>FLOWPILOT INTELLIGENCE</p><h2>Requirement readiness</h2><div class="quality-list">${checks.map(([name]) => `<span>${esc(name)} <b>${missing.includes(name) ? 'Missing' : 'Present'}</b></span>`).join('')}</div><p class="intelligence-caption">${missing.length ? `Missing information: ${missing.join(', ')}.` : 'The current brief has the core deterministic readiness signals.'}</p><div class="preview-stages"><span>Requirement</span><i></i><span>Analysis</span><i></i><span>Review</span><i></i><span>QA handoff</span></div>`;
+  const preview = $('workflowPreview');
+  preview.querySelector('span').textContent = missing.length ? `${missing.length} area${missing.length === 1 ? '' : 's'} need clarification before the strongest handoff.` : 'The requirement is ready to create and progress through the governed workflow.';
+}
+
+function renderClarifications(intelligence) {
+  const questions = intelligence.questions || [];
+  const panel = $('clarificationPanel');
+  if (!questions.length) { panel.hidden = true; return; }
+  $('clarificationQuestions').innerHTML = questions.map(item => `<label><input type="checkbox" data-clarification="${esc(item.dimension)}" checked><span><strong>${esc(item.dimension)}</strong>${esc(item.question)}</span></label>`).join('');
+  panel.hidden = false;
+}
+
+$('requirement').addEventListener('input', renderComposerIntelligence);
+renderComposerIntelligence();
+
 $('aiImprove').onclick = async () => {
   const raw = $('requirement').value.trim();
   if (raw.length < 8) { $('formError').textContent = 'Add a short requirement before requesting guidance.'; $('requirement').focus(); return; }
@@ -869,11 +901,25 @@ $('aiImprove').onclick = async () => {
     setAnalysisStages(4, true);
     const missing = requirementIntelligence.dimensions.filter(item => item.status !== 'Good').map(item => item.dimension);
     $('aiSuggestion').querySelector('p').textContent = `FLOWPILOT SUGGESTION · ${requirementIntelligence.overall.toUpperCase()}`;
-    $('aiSuggestion').querySelector('strong').textContent = missing.length ? `Add detail for: ${missing.join(', ')}` : 'The requirement has strong coverage.';
-    $('aiSuggestion').querySelector('span').textContent = requirementIntelligence.questions.map(item => item.question).join(' ') || 'Review the proposed wording before applying it.';
+    $('aiSuggestion').querySelector('strong').textContent = missing.length ? `Before: ${missing.join(', ')} missing` : 'Before: core readiness signals detected';
+    $('aiSuggestion').querySelector('span').textContent = `After applying selected additions: ${requirementIntelligence.proposed_requirement.slice(0, 180)}…`;
+    $('applyAiSuggestion').textContent = 'Apply selected';
     $('aiSuggestion').hidden = false;
+    renderClarifications(requirementIntelligence);
+    renderComposerIntelligence();
   } catch (error) { toast(error.message || 'Unable to analyze the requirement.', 'error'); }
   finally { $('formProgress').hidden = true; button.disabled = false; button.textContent = '✦ Improve requirement'; }
+};
+
+$('applyAiSuggestion').onclick = () => {
+  if (!requirementIntelligence) return;
+  const selected = [...document.querySelectorAll('[data-clarification]:checked')].map(item => clarificationTemplates[item.dataset.clarification]).filter(Boolean);
+  if (!selected.length) { toast('Select at least one suggested addition to apply.', 'info'); return; }
+  const area = $('requirement');
+  area.value = `${area.value.trim()}\n\n${selected.join('\n\n')}`;
+  $('aiSuggestion').hidden = true; $('clarificationPanel').hidden = true;
+  updateRequirementCount(); autoGrowRequirement(); renderComposerIntelligence();
+  toast('Selected additions were appended for your review.', 'success');
 };
 
 function openCommandPalette() { $('commandDialog').showModal(); $('commandSearch').value = ''; $('commandSearch').focus(); document.querySelectorAll('[data-command]').forEach(button => button.hidden = false); }
