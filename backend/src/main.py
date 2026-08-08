@@ -796,7 +796,11 @@ def tests_generate(project_id: str) -> JSONResponse:
         run_id=start_agent_run(c,project,"tests","backlog")
         project=transition(c,project,"TESTS_GENERATED","tests_generated","tests"); cases=[]
         for story in backlog["stories"]:
-            for typ in ("positive","negative","boundary"): cases.append({"id":f"TC-{len(cases)+1:03d}","criterion_id":story["acceptance_criteria"][0]["id"],"type":typ})
+            criterion = story["acceptance_criteria"][0]
+            for typ in ("positive","negative","boundary"):
+                case_id = f"TC-{len(cases)+1:03d}"
+                objective = {"positive":"the expected outcome is produced", "negative":"invalid input is rejected safely", "boundary":"boundary input is handled safely"}[typ]
+                cases.append({"id":case_id,"title":f"{typ.title()} path for {story['id']}","category":typ.title(),"type":typ,"preconditions":["An approved backlog story is available.", "A valid test environment is available."],"steps":[f"Prepare input for {criterion['id']}.", "Submit the requested action.", "Observe the system response."],"expected_result":objective,"coverage":"Covered","criterion_id":criterion["id"],"source_acceptance_criterion":criterion["id"],"generated_by":"QA Agent"})
         tv=revision(c,project,"tests","TESTS_GENERATED",{"id":"TEST-001","test_cases":cases,"backlog_version":row["version"]})
         project=transition(c,project,"TESTS_GENERATED","tests_generated","tests",tv)
         finish_agent_run(c,run_id,f"tests:v{tv}")

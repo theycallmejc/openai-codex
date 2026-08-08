@@ -27,6 +27,8 @@ def test_agents_progress_one_stage_at_a_time_with_approval_gates(tmp_path,monkey
     assert c.post(f"/api/projects/{p}/qa-handoff/generate").json()["data"]["state"]=="COMPLETED"
     data=c.get(f"/api/projects/{p}").json()["data"]
     assert data["artifacts"]["qa_handoff"]["status"]=="ready"
+    case = data["artifacts"]["tests"]["test_cases"][0]
+    assert {"title", "category", "preconditions", "steps", "expected_result", "coverage", "source_acceptance_criterion", "generated_by"} <= set(case)
 
 def test_duplicate_and_missing_requirement_are_rejected(tmp_path,monkeypatch):
     c=client(tmp_path,monkeypatch); p=create(c); payload={"raw_requirement":"Users can export reports to CSV."}

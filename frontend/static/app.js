@@ -351,6 +351,27 @@ function qaArtifact(vm) {
     </div>`;
 }
 
+function artifactStatus(artifact) {
+  const approval = artifact?.approval_state;
+  if (approval === 'APPROVED') return 'Approved';
+  if (approval === 'REJECTED') return 'Needs changes';
+  return artifact ? 'AI generated' : 'Waiting';
+}
+
+function artifactControls(kind, copyText) {
+  const awaiting = project.state === `${kind.toUpperCase()}_AWAITING_APPROVAL`;
+  const rejected = project.state === `${kind.toUpperCase()}_REJECTED`;
+  return `${copyText ? `<button class="copy" data-copy="${esc(copyText)}">Copy</button>` : ''}<button class="secondary" data-edit-artifact>Edit review</button>${awaiting ? `<button class="primary" data-approve="${kind}">Accept</button><button class="secondary" data-reject="${kind}">Reject</button>` : ''}${rejected ? `<button class="secondary" data-run="${kind}/generate">Regenerate</button>` : ''}`;
+}
+
+function artifactHeader(label, title, artifact, copyText = '', kind = '') {
+  return `<header class="artifact-head structured-artifact-head"><div><p>${esc(label)} · ${esc(artifactStatus(artifact))}</p><h1>${esc(title)}</h1><span>v${esc(artifact?.version || 1)} · ${artifact?.created_at ? esc(time(artifact.created_at)) : 'Current output'}</span></div><div class="artifact-actions">${kind ? artifactControls(kind, copyText) : copyText ? `<button class="copy" data-copy="${esc(copyText)}">Copy</button>` : '<button class="secondary" data-edit-artifact>Edit review</button>'}</div></header>`;
+}
+
+function riskResults() {
+  return (project.orchestration_runs || []).filter(run => run.agent === 'risk' && run.status === 'completed').flatMap(run => run.result?.risks || []);
+}
+
 function artifact(vm) {
   const a = project.artifacts || {};
   const source = project.description || '';
@@ -361,23 +382,30 @@ function artifact(vm) {
   }
   if (vm.selectedArtifact === 'Analysis') {
     const items = a.analysis?.functional_requirements || [];
-    return `<header class="artifact-head"><div><p>ANALYSIS OUTPUT</p><h1>Functional requirements</h1></div></header>
-      <div class="card-grid">${items.map(x => sourceCard(x.id, x.title || x.id, x.text, 'Validated')).join('') || '<p class="empty-copy">No analysis output is available.</p>'}</div>`;
+    const sourceText = project.description || '';
+    const groups = [
+      ['Actors', /\b(users?|customers?|admins?|system)\b/i, 'No actor was explicitly identified.'],
+      ['Business rules', /\b(must|only|cannot|unless|rule|within)\b/i, 'No explicit business rule was identified.'],
+      ['Acceptance criteria', /\b(given|when|then|acceptance)\b/i, 'No explicit acceptance criterion was identified.'],
+      ['Dependencies', /\b(api|integration|service|database|dependency)\b/i, 'No dependency was explicitly identified.'],
+      ['Ambiguities', /\b(tbd|maybe|somehow|etc\.)\b/i, 'No ambiguity signal was detected.']
+    ];
+    const details = groups.map(([name, pattern, fallback]) => `<article><strong>${name}</strong><span>${pattern.test(sourceText) ? items.filter(item => pattern.test(item.text)).map(item => item.text).join(' · ') || 'Relevant detail detected in the source requirement.' : fallback}</span></article>`).join('');
+    const questions = (project.orchestration_runs || []).filter(run => run.agent === 'requirement' && run.status === 'completed').flatMap(run => run.result?.questions || []);
+    const risks = riskResults();
+    return `${artifactHeader('REQUIREMENT ANALYSIS', 'Structured requirement analysis', a.analysis, sourceText)}<section class="analysis-record"><div class="structured-grid">${details}</div><section class="open-questions"><strong>Open questions</strong>${questions.length ? `<ul>${questions.map(question => `<li>${esc(question.question)}</li>`).join('')}</ul>` : '<span>No persisted open questions were recorded.</span>'}</section>${risks.length ? `<section class="risk-record"><strong>Risk findings</strong>${risks.map(risk => `<article><b>${esc(risk.severity)}</b><div><h3>${esc(risk.risk)}</h3><span><em>Reason</em> Detected from the captured requirement.</span><span><em>Affected requirement</em> ${esc(project.public_id)}</span><span><em>Suggested mitigation</em> ${esc(risk.mitigation)}</span></div></article>`).join('')}</section>` : ''}</section>`;
   }
   if (vm.selectedArtifact === 'BRD') {
     const scope = a.brd?.scope_in || [];
-    return `<header class="artifact-head"><div><p>BRD · ${esc(a.brd?.approval_state || 'PENDING')}</p><h1>Business requirements</h1></div></header>
-      <div class="card-grid">${scope.map((text, i) => sourceCard(`REQ-${String(i + 1).padStart(3, '0')}`, `Business requirement ${i + 1}`, text, a.brd?.approval_state || 'Pending')).join('') || '<p class="empty-copy">No BRD scope is available.</p>'}</div>`;
+    return `${artifactHeader('BRD', 'Business requirements', a.brd, scope.join('\n'), 'brd')}<div class="card-grid">${scope.map((text, i) => sourceCard(`REQ-${String(i + 1).padStart(3, '0')}`, `Business requirement ${i + 1}`, text, artifactStatus(a.brd))).join('') || '<p class="empty-copy">No BRD scope is available.</p>'}</div>`;
   }
   if (vm.selectedArtifact === 'Backlog') {
     const stories = a.backlog?.stories || [];
-    return `<header class="artifact-head"><div><p>BACKLOG · ${esc(a.backlog?.approval_state || 'PENDING')}</p><h1>Delivery backlog</h1></div></header>
-      <div class="card-grid">${stories.map(x => sourceCard(x.id, x.title || 'User story', (x.acceptance_criteria || []).map(c => c.then || c.id).join(' • '), `${(x.acceptance_criteria || []).length} criteria`)).join('') || '<p class="empty-copy">No backlog stories are available.</p>'}</div>`;
+    return `${artifactHeader('BACKLOG', 'Delivery backlog', a.backlog, JSON.stringify(stories, null, 2), 'backlog')}<div class="card-grid">${stories.map(x => sourceCard(x.id, x.title || 'User story', (x.acceptance_criteria || []).map(c => c.then || c.id).join(' • '), `${(x.acceptance_criteria || []).length} criteria · ${artifactStatus(a.backlog)}`)).join('') || '<p class="empty-copy">No backlog stories are available.</p>'}</div>`;
   }
   if (vm.selectedArtifact === 'Tests') {
     const tests = a.tests?.test_cases || [];
-    return `<header class="artifact-head"><div><p>GENERATED TESTS</p><h1>Test coverage</h1></div></header>
-      <div class="card-grid">${tests.map(x => sourceCard(x.id, x.title || x.type || 'Test case', x.expected_result || x.criterion_id || '', x.type || 'Test')).join('') || '<p class="empty-copy">No tests are available.</p>'}</div>`;
+    return `${artifactHeader('QA TEST CASES', 'Generated test coverage', a.tests, JSON.stringify(tests, null, 2))}<div class="test-case-list">${tests.map(test => `<article class="test-case"><header><div><p>${esc(test.id)}</p><h2>${esc(test.title || `${test.type || 'Test'} coverage`)}</h2></div><span>${esc(test.category || test.type || 'Test')}</span></header><dl><div><dt>Preconditions</dt><dd>${esc((test.preconditions || ['No preconditions were recorded.']).join(' '))}</dd></div><div><dt>Steps</dt><dd><ol>${(test.steps || ['No detailed steps were recorded.']).map(step => `<li>${esc(step)}</li>`).join('')}</ol></dd></div><div><dt>Expected result</dt><dd>${esc(test.expected_result || 'No expected result was recorded.')}</dd></div><div><dt>Coverage</dt><dd>${esc(test.coverage || 'Mapped')}</dd></div><div><dt>Source acceptance criterion</dt><dd>${esc(test.source_acceptance_criterion || test.criterion_id || 'Not recorded')}</dd></div><div><dt>Generated by</dt><dd>${esc(test.generated_by || 'QA Agent')}</dd></div></dl><details><summary>Review metadata</summary><p>${esc(artifactStatus(a.tests))} · version ${esc(a.tests?.version || 1)}</p></details></article>`).join('') || '<p class="empty-copy">No tests are available.</p>'}</div>`;
   }
   if (vm.selectedArtifact === 'Traceability') {
     return `<header class="artifact-head"><div><p>VALIDATION REPORT</p><h1>Traceability</h1></div></header>
@@ -627,6 +655,7 @@ function bindWorkspace(vm) {
   document.querySelectorAll('[data-reset]').forEach(button => button.onclick = reset);
   document.querySelectorAll('[data-next-scenario]').forEach(button => button.onclick = openNextScenario);
   document.querySelectorAll('[data-retry-workflow]').forEach(button => button.onclick = () => run('retry'));
+  document.querySelectorAll('[data-edit-artifact]').forEach(button => button.onclick = () => { $('commentBody')?.focus(); $('commentBody')?.scrollIntoView({behavior:'smooth', block:'center'}); });
   $('commentForm')?.addEventListener('submit', async event => { event.preventDefault(); try { await api(`/api/projects/${project.public_id}/comments`, {artifact_type:view.toLowerCase().replace(' ', '_'), author:$('commentAuthor').value.trim(), body:$('commentBody').value.trim()}); project = await api(`/api/projects/${project.public_id}`); render(); toast('Comment added', 'success'); } catch (error) { toast(error.message || 'Unable to add comment.', 'error'); } });
   $('assignmentForm')?.addEventListener('submit', async event => { event.preventDefault(); const artifactType = project.state === 'BRD_AWAITING_APPROVAL' ? 'brd' : 'backlog'; try { await api(`/api/projects/${project.public_id}/review-assignment`, {artifact_type:artifactType, reviewer:$('assignmentReviewer').value.trim()}); project = await api(`/api/projects/${project.public_id}`); render(); toast('Reviewer assigned', 'success'); } catch (error) { toast(error.message || 'Unable to save assignment.', 'error'); } });
   document.querySelector('[data-load-plan]')?.addEventListener('click', loadOrchestrationPlan);
