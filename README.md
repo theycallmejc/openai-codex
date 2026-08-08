@@ -72,7 +72,7 @@ The demo emits machine-readable evidence of the complete staged workflow, includ
 - Local single-user application with a development-only browser sign-in gate
 - Workflow APIs require the signed browser session. Set `FLOWPILOT_SESSION_SECRET` to a strong unique value before sharing the service, and set `FLOWPILOT_SESSION_HTTPS_ONLY=true` behind HTTPS.
 - Deterministic artifact generation; no runtime LLM provider is configured
-- Login is not production authentication: workflow APIs are not yet protected by server-side session middleware
+- Login is not production authentication: it is a local development session gate, not a production identity system
 - No external connectors or deployed scheduler yet
 ## AI quality evaluation
 
@@ -84,3 +84,7 @@ python -m evals.run --suite core --baseline evals/results/<prior-report>.json
 ```
 
 Each saved JSON report records the run ID, suite version, prompt version, model label, agent, timestamp, latency, available token usage, deterministic check failures, per-case metrics, and regression comparison. `--live` is intentionally unavailable until a live-model adapter is explicitly configured; this keeps CI and normal tests network-free.
+
+## Development workflow
+
+Use [AGENTS.md](AGENTS.md) for permanent engineering rules, [the product roadmap](docs/product/ROADMAP.md) for priorities, [the current task](docs/plans/CURRENT_TASK.md) for the next bounded implementation, and [architecture documentation](docs/architecture/ARCHITECTURE.md) before changing the system. Reusable task playbooks are in `docs/tasks/`.
