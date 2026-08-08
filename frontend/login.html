@@ -3,13 +3,35 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark">
   <title>Sign in · FlowPilot</title><link rel="stylesheet" href="/static/styles.css?v=20260808-login-page">
+  <link rel="stylesheet" href="/static/styles.css?v=20260809-premium-login">
 </head>
 <body>
   <main class="login-view"><section class="login-panel" aria-labelledby="loginTitle"><div class="login-brand"><span>✦</span><strong>FlowPilot</strong><b>LOCAL</b></div><p class="eyebrow">GOVERNED DELIVERY WORKSPACE</p><h1 id="loginTitle">Sign in to your workspace</h1><p class="login-copy">Create traceable requirements, reviewed handoffs, and QA-ready delivery evidence.</p><form id="loginForm"><label>Email<input id="loginEmail" type="email" autocomplete="email" value="admin@flowpilot.local" required></label><label>Password<input id="loginPassword" type="password" autocomplete="current-password" value="flowpilot" required></label><p id="loginError" role="alert"></p><button id="loginSubmit" class="primary" type="submit">Sign in <i>→</i></button></form><p class="login-help">Local demo account is prefilled for this environment.</p></section><aside class="login-aside" aria-hidden="true"><span>FLOWPILOT</span><h2>From a clear brief<br>to a confident handoff.</h2><ul><li>Structured requirements</li><li>Human review gates</li><li>Traceable QA evidence</li></ul></aside></main>
+  <main class="premium-login" aria-labelledby="premiumLoginTitle">
+    <section class="product-story" aria-label="How FlowPilot works">
+      <div class="story-brand"><span aria-hidden="true">&#10022;</span><strong>FlowPilot</strong><b>AI WORKFLOW ORCHESTRATION</b></div>
+      <div class="story-copy"><p>AI PRODUCT EXPERIENCE</p><h1>Turn requirements into <em>QA-ready artifacts.</em></h1><span>Specialized agents analyze requirements, uncover risks, generate QA scenarios, and preserve traceability from brief to handoff.</span></div>
+      <div class="workflow-demo" aria-label="FlowPilot agent workflow demonstration">
+        <article class="demo-requirement"><small>REQUIREMENT</small><strong>Secure password reset</strong><span>“As a customer, I want to securely reset my password.”</span></article>
+        <i class="demo-connector"></i>
+        <article class="demo-agent requirement-agent"><b>&#10022;</b><div><strong>Requirements Agent</strong><span>Extracting business rules</span></div><em>Analyzing</em></article>
+        <i class="demo-connector"></i>
+        <article class="demo-agent risk-agent"><b>&#10022;</b><div><strong>Risk Agent</strong><span>Checking edge cases</span></div><em>Waiting</em></article>
+        <i class="demo-connector"></i>
+        <article class="demo-agent qa-agent"><b>&#10022;</b><div><strong>QA Agent</strong><span>Generating test scenarios</span></div><em>Waiting</em></article>
+        <i class="demo-connector"></i>
+        <article class="demo-artifact"><b>&#10003;</b><div><strong>QA-ready artifact</strong><span>Traceable evidence prepared for review</span></div></article>
+      </div>
+      <p class="story-status"><i></i> FlowPilot Intelligence <span>Requirements &rarr; Risk &rarr; QA &rarr; Traceability</span></p>
+    </section>
+    <section class="premium-auth"><div class="auth-card"><div class="auth-brand"><span aria-hidden="true">&#10022;</span><strong>FlowPilot</strong></div><p class="eyebrow">WORKFLOW WORKSPACE</p><h2 id="premiumLoginTitle">Welcome to FlowPilot</h2><p>Sign in to continue to your AI workflow workspace.</p><form id="premiumLoginForm"><label>Email<input id="premiumLoginEmail" type="email" autocomplete="email" value="admin@flowpilot.local" required></label><label>Password<input id="premiumLoginPassword" type="password" autocomplete="current-password" value="flowpilot" required></label><p id="premiumLoginError" role="alert"></p><button id="premiumLoginSubmit" class="primary" type="submit">Sign in <i>&rarr;</i></button></form><p class="auth-control">&#10022; AI assists. You approve.</p><p class="login-help">Local demo account is prefilled for this environment.</p></div></section>
+  </main>
   <script>
     const form=document.getElementById('loginForm'),button=document.getElementById('loginSubmit'),error=document.getElementById('loginError');
     form.addEventListener('submit',async event=>{event.preventDefault();error.textContent='';button.disabled=true;button.textContent='Signing in…';try{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('loginEmail').value,password:document.getElementById('loginPassword').value})});const json=await response.json();if(!response.ok||!json.success)throw Error(json.error?.message||'Unable to sign in.');localStorage.setItem('flowpilot.user',JSON.stringify(json.data));window.location.assign('/app')}catch(failure){error.textContent=failure.message;button.disabled=false;button.innerHTML='Sign in <i>→</i>'}});
     try{if(JSON.parse(localStorage.getItem('flowpilot.user')||'null')?.name)window.location.replace('/app')}catch(_){localStorage.removeItem('flowpilot.user')}
+    const premiumForm=document.getElementById('premiumLoginForm'),premiumButton=document.getElementById('premiumLoginSubmit'),premiumError=document.getElementById('premiumLoginError');
+    premiumForm.addEventListener('submit',async event=>{event.preventDefault();premiumError.textContent='';premiumButton.disabled=true;premiumButton.textContent='Signing you in…';try{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('premiumLoginEmail').value,password:document.getElementById('premiumLoginPassword').value})});const json=await response.json();if(!response.ok||!json.success)throw Error('We couldn’t sign you in. Check your credentials and try again.');localStorage.setItem('flowpilot.user',JSON.stringify(json.data));window.location.assign('/app')}catch(_){premiumError.textContent='We couldn’t sign you in. Check your credentials and try again.';premiumButton.disabled=false;premiumButton.innerHTML='Sign in <i>→</i>'}});
   </script>
 </body>
 </html>
