@@ -895,7 +895,19 @@ def traceability_generate(project_id: str) -> JSONResponse:
         run_id=start_agent_run(c,project,"traceability","tests + backlog")
         tests,row=latest_revision(c,project,"tests")
         backlog,_=latest_revision(c,project,"backlog")
-        version=revision(c,project,"traceability","TRACEABILITY_VALIDATED",{"valid":True,"criteria_count":len(backlog["stories"]),"test_count":len(tests["test_cases"]),"coverage":"100%","gaps":[]})
+        analysis,_ = latest_revision(c, project, "analysis")
+        relationships = []
+        for index, story in enumerate(backlog["stories"], 1):
+            requirement = (analysis or {}).get("functional_requirements", [])[index - 1] if index <= len((analysis or {}).get("functional_requirements", [])) else {"id": f"REQ-001-FR-{index:02d}", "text": story.get("title", "Requirement")}
+            criteria = []
+            for criterion in story.get("acceptance_criteria", []):
+                linked = [case["id"] for case in tests["test_cases"] if (case.get("source_acceptance_criterion") or case.get("criterion_id")) == criterion["id"]]
+                criteria.append({"id":criterion["id"], "test_cases":linked, "status":"Covered" if linked else "Missing coverage"})
+            relationships.append({"requirement_id":requirement.get("id", f"REQ-{index:03d}"), "requirement_text":requirement.get("text", story.get("title", "Requirement")), "business_rule_id":f"BR-{index:03d}", "business_rule":requirement.get("text", story.get("title", "Requirement")), "acceptance_criteria":criteria, "artifact":"BACKLOG-001"})
+        linked_ids = {case_id for relationship in relationships for criterion in relationship["acceptance_criteria"] for case_id in criterion["test_cases"]}
+        unlinked = [case["id"] for case in tests["test_cases"] if case["id"] not in linked_ids]
+        gaps = [criterion["id"] for relationship in relationships for criterion in relationship["acceptance_criteria"] if not criterion["test_cases"]]
+        version=revision(c,project,"traceability","TRACEABILITY_VALIDATED",{"valid":not gaps and not unlinked,"criteria_count":sum(len(story.get("acceptance_criteria", [])) for story in backlog["stories"]),"test_count":len(tests["test_cases"]),"coverage":"100%" if not gaps else "Incomplete","gaps":gaps,"relationships":relationships,"unlinked_test_cases":unlinked,"artifact":"QAH-001"})
         project=transition(c,project,"TRACEABILITY_VALIDATED","traceability_validated","traceability",version)
         finish_agent_run(c,run_id,f"traceability:v{version}")
         return envelope({"state":project["state"],"agent":"traceability","artifact_version":version,"next_action":"create_qa_handoff"})

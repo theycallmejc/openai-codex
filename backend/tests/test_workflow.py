@@ -27,6 +27,9 @@ def test_agents_progress_one_stage_at_a_time_with_approval_gates(tmp_path,monkey
     assert c.post(f"/api/projects/{p}/qa-handoff/generate").json()["data"]["state"]=="COMPLETED"
     data=c.get(f"/api/projects/{p}").json()["data"]
     assert data["artifacts"]["qa_handoff"]["status"]=="ready"
+    relationship = data["artifacts"]["traceability"]["relationships"][0]
+    assert relationship["business_rule_id"] == "BR-001"
+    assert relationship["acceptance_criteria"][0]["test_cases"]
     case = data["artifacts"]["tests"]["test_cases"][0]
     assert {"title", "category", "preconditions", "steps", "expected_result", "coverage", "source_acceptance_criterion", "generated_by"} <= set(case)
     review = c.post(f"/api/projects/{p}/review/run")
